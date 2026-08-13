@@ -5,6 +5,8 @@ from pathlib import Path
 
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
 model_config = OmegaConf.load(CONFIG_DIR / "DeepONet_models.yml")
+initial_conditions_config = OmegaConf.load(CONFIG_DIR / "initial_conditions.yml")
+PLL_Constants = OmegaConf.load(CONFIG_DIR / "PLL_Constants.yml")
 
 class MLP(nn.Module):
     def __init__(self, sizes, act=nn.Tanh):
@@ -24,10 +26,13 @@ class Unstacked_DeepONet(nn.Module):
     def __init__(self, model_config=model_config):
     
         super().__init__()
-        self.branch_sizes = model_config.sizes.branch_net
-        self.trunk_sizes  = model_config.sizes.trunk_net
+        self.branch_sizes = list(model_config.sizes.branch_net)
+        self.trunk_sizes  = list(model_config.sizes.trunk_net)
+        self.W = initial_conditions_config.Windows
+        self.S = PLL_Constants.sensors
         self.F = model_config.num_fourier_feats
-        self.trunk_sizes[0]+= 2 * self.F  # F is the number of Fourier Feats and we need 1 + Addition[cos(wt/k),sin(wt/k)] k: ranging [1,F] so 1 + 2F
+        self.trunk_sizes[0] += 2 * self.F  # F is the number of Fourier Feats and we need 1 + Addition[cos(wt/k),sin(wt/k)] k: ranging [1,F] so 1 + 2F
+        self.branch_sizes[0] += 3 * int(self.S / self.W)
         self.trunk_net = MLP(self.trunk_sizes)
         self.branch_net = MLP(self.branch_sizes)
         self.hidden_dim = model_config.hidden_dim

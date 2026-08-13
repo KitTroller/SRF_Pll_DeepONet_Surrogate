@@ -133,5 +133,5 @@ class Dataset_Creator():
         self.save_dataset(records, self.build_meta(), path)
         return records    
         
-        
-# Dataset_Creator().generate_dataset()
+if __name__ == "__main__":        
+    Dataset_Creator().generate_dataset()

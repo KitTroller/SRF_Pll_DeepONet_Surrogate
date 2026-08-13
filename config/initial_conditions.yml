@@ -2,7 +2,7 @@
 n_runs: 1000
 pll_init_dependent_on_initial_grid_angle: true
 pll_init_angle_range_factor: 0.5 # used when flag is true
-Windows: 10
+Windows: 40
 ranges:
   initial_grid_angle: [-3.141592653589793, 3.141592653589793] # rad
   frequency_offset: [-0.2, 0.2] # Hz

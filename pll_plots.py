@@ -9,11 +9,11 @@ from pathlib import Path
 
 from dataset_generator import Dataset_Creator
 from train_pll import prepare, group_split, load_checkpoint, OMEGA_BASE
-from pll_infer import predict_window                 # needs the __main__ guard first
+from pll_infer import predict_window
 
 GRAPHS = Path(__file__).resolve().parent / "graphs"
 GRAPHS.mkdir(exist_ok=True)
-DPI = 160        # your PLL_Simulator.py uses dpi=1024 -> that is why the PNG is 7 MB
+DPI = 1024
 
 wrap = lambda x: (x + np.pi) % (2 * np.pi) - np.pi
 
@@ -267,15 +267,18 @@ def fig_residual_budget(data, meta):
     is stored data, so Kp*dVq/dt is silently dropped -- and it is the BIGGER
     of the two terms."""
     dt, Ki, Kp, W = meta["dt"], meta["Ki"], meta["Kp"], meta["W"]
+    S = meta["S"]
+    k    = max(3, min(51, (S // 10) | 1))   # odd kernel, never longer than S/10
+    trim = max(1, k)                        # drop the convolution edges only
     seg = data["segment_id"]
     ker = np.ones(51) / 51
     kept, dropped, noise = [], [], []
     for w in range(W):
         Vq = data["Vq"][seg == w].numpy().astype(np.float64)
         Vqs = np.apply_along_axis(lambda r: np.convolve(r, ker, "same"), 1, Vq)
-        kept.append(Ki * np.sqrt((Vqs[:, 60:-60] ** 2).mean()))
-        dropped.append(Kp * np.sqrt((np.gradient(Vqs, dt, axis=1)[:, 60:-60] ** 2).mean()))
-        noise.append(Ki * np.sqrt(((Vq - Vqs)[:, 60:-60] ** 2).mean()))
+        kept.append(Ki * np.sqrt((Vqs[:, trim : - trim] ** 2).mean()))
+        dropped.append(Kp * np.sqrt((np.gradient(Vqs, dt, axis=1)[:, trim : - trim] ** 2).mean()))
+        noise.append(Ki * np.sqrt(((Vq - Vqs)[:, trim : - trim] ** 2).mean()))
 
     x = np.arange(W)
     fig, ax = plt.subplots(figsize=(8, 4.5))
