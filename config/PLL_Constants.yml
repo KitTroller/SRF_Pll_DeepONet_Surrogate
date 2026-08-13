@@ -1,0 +1,9 @@
+Pll:
+  Kp: 25  # controller scalar gain
+  Ki: 300  # controller Integrtor gain
+  f_0: 50  #omega = 2 * pi * 50hz grid's frequency
+  v_nominal: 1  # pu
+  noise_amplitude: 0.1  # 10% pu noise
+  frequency_noise: 0.2  # hz not used now
+sensors: 5000
+time_window: 0.5
