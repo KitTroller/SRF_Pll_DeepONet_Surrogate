@@ -224,18 +224,19 @@ def fig_error_by_window(data, prep, meta, model, ck, tr, va):
     """my addition: a single scalar val loss hides that ~2/3 of the error is
     in window 0. R^2 = 1 - MSE/var; R^2 <= 0 means 'no better than the mean'."""
     from torch.utils.data import DataLoader
-    from train_pll import PLLDataset, assemble_batch
+    from train_pll import build_branch, batches
     from pll_residual import compute_theta_omega
     W, seg = meta["W"], data["segment_id"]
-
+    branch = build_branch(prep, ck["mu"], ck["sd"])
     def stats(mask):
-        dl = DataLoader(PLLDataset(prep, mask), batch_size=256)
-        TH, OM, TT, TO = [], [], [], []
-        for b in dl:
-            br, tq, Vq, tth, tom = assemble_batch(b, prep["t_local"], ck["mu"], ck["sd"])
-            o = compute_theta_omega(model, tq, br, Vq, omega_nominal=0.0)
+        tens = tuple(t[mask] for t in (branch, prep["Vq"], prep["target_theta"], prep["target_omega"]))
+        n = int(mask.sum()); TH, OM, TT, TO = [], [], [], []
+        for br, Vq, tth, tom in batches(tens, n, 256, False, "cpu", False):
+            B = br.shape[0]
+            tq = prep["t_local"].view(1,-1,1).expand(B,-1,1).clone().requires_grad_(True)
+            o = compute_theta_omega(model, tq, br, Vq.unsqueeze(-1), omega_nominal=0.0)
             TH.append(o["theta"].detach()); OM.append(o["omega"].detach())
-            TT.append(tth); TO.append(tom)
+            TT.append(tth.unsqueeze(-1)); TO.append(tom.unsqueeze(-1))
         th, om, tt, to = map(torch.cat, (TH, OM, TT, TO))
         return (1 - (th-tt).pow(2).mean()/tt.var()).item(), \
                (1 - (om-to).pow(2).mean()/to.var()).item(), \
@@ -269,9 +270,9 @@ def fig_residual_budget(data, meta):
     dt, Ki, Kp, W = meta["dt"], meta["Ki"], meta["Kp"], meta["W"]
     S = meta["S"]
     k    = max(3, min(51, (S // 10) | 1))   # odd kernel, never longer than S/10
-    trim = max(1, k)                        # drop the convolution edges only
+    trim = k
     seg = data["segment_id"]
-    ker = np.ones(51) / 51
+    ker = np.ones(k) / k
     kept, dropped, noise = [], [], []
     for w in range(W):
         Vq = data["Vq"][seg == w].numpy().astype(np.float64)

@@ -27,49 +27,47 @@ def interp1d(x_src, y_src, x_query):
 
 @torch.enable_grad()
 def predict_window(model, checkpoint, theta0, omega0, Va, Vb, Vc, times=None):
-    """One window. Returns ABSOLUTE theta and omega at `times`.
-    theta0, omega0 : scalars    Va,Vb,Vc : (S,)    times : (T,) or None"""
     mu, sd = checkpoint["mu"], checkpoint["sd"]
     t = checkpoint["t_local"] if times is None else times
     T = t.shape[0]
-
     branch = torch.cat([torch.sin(theta0).view(1, 1), torch.cos(theta0).view(1, 1), ((omega0 - mu) / sd).view(1, 1), Va.view(1, -1), Vb.view(1, -1), Vc.view(1, -1)], dim=-1)
     t_query = t.view(1, T, 1).clone().requires_grad_(True)
-
-    # Vq=0 and omega_nominal=0 make out["omega"] exactly d(theta_dev)/dt, the Kp*Vq term is added back below.
     out = compute_theta_omega(model, t_query, branch, torch.zeros(1, T, 1), omega_nominal=0.0)
-    theta_dev = out["theta"].squeeze()
-    dtheta_dt = out["omega"].squeeze()
-    theta_abs = theta_dev + theta0 + OMEGA_BASE * t  # undo the ramp shift : for the network to learn we remove theta0 and the known 50rad/s ramping
+    theta_abs = out["theta"].squeeze() + theta0 + OMEGA_BASE * t     # undo the D5 shift
 
-    ts = checkpoint["t_local"]
-    same = t.shape == ts.shape and torch.equal(t, ts)
-    Va_t = Va if same else interp1d(ts, Va, t)
-    Vb_t = Vb if same else interp1d(ts, Vb, t)
-    Vc_t = Vc if same else interp1d(ts, Vc, t)
-    _, Vq = _phys.park_dqTransform(Va_t, Vb_t, Vc_t, theta_abs)  # Vq isn't available at deployment, we recompute it from the measured, voltages and our angle estimate close the loop.
-    omega = dtheta_dt - KP * Vq
+    if model.output_dim == 2:
+        # omega comes straight out of head 2. No Vq at inference at all, so the
+        # Kp * (sensor noise) term never enters the prediction.
+        omega = out["omega"].squeeze()
+    else:
+        # single head: omega = dtheta/dt - Kp*Vq, and Vq is NOT measurable at
+        # deployment -- recompute it from our own angle estimate
+        dtheta_dt = out["omega"].squeeze()          # Vq=0 was passed in, so this is dtheta/dt
+        ts = checkpoint["t_local"]
+        same = t.shape == ts.shape and torch.equal(t, ts)
+        Va_t = Va if same else interp1d(ts, Va, t)
+        Vb_t = Vb if same else interp1d(ts, Vb, t)
+        Vc_t = Vc if same else interp1d(ts, Vc, t)
+        _, Vq = _phys.park_dqTransform(Va_t, Vb_t, Vc_t, theta_abs)
+        omega = dtheta_dt - KP * Vq
 
     return theta_abs.detach(), omega.detach()
 
 
-def rollout(model, checkpoint, prep, run_idx, n_windows, W=windows):
-    """Chain windows: each window's predicted final state becomes the next IC.
-    Va,Vb,Vc are always the true external forcing only the state is fed
-    back."""
-    t_local = checkpoint["t_local"]
-    dt = float(t_local[1] - t_local[0])  # Query one step past the window so the last value lines up with the next window's start
-    t_ext = torch.cat([t_local, t_local[-1:] + dt])
 
+def rollout(model, checkpoint, prep, run_idx, n_windows, W):
+    if n_windows > W:
+        raise ValueError(f"n_windows={n_windows} > W={W}: the rollout would walk " f"into the next run, which has a different grid scenario")
+    t_local = checkpoint["t_local"]
+    dt = float(t_local[1] - t_local[0])
+    t_ext = torch.cat([t_local, t_local[-1:] + dt])
     row0 = run_idx * W
     theta0, omega0 = prep["theta0_abs"][row0], prep["omega0"][row0]
-
     th_all, om_all = [], []
     for k in range(n_windows):
-        r = row0 + k
-        th, om = predict_window(model, checkpoint, theta0, omega0, prep["Va"][r], prep["Vb"][r], prep["Vc"][r], t_ext)
-        th_all.append(th[:-1]); om_all.append(om[:-1])      # drop the extra point
-        theta0, omega0 = th[-1], om[-1]                     # feedback
+        th, om = predict_window(model, checkpoint, theta0, omega0, prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext)
+        th_all.append(th[:-1]); om_all.append(om[:-1])
+        theta0, omega0 = th[-1], om[-1]  # the feedback
     return torch.cat(th_all), torch.cat(om_all)
 
 

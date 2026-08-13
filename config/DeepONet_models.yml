@@ -1,5 +1,5 @@
 hidden_dim: 64
-output_dim: 1
+output_dim: 2
 num_fourier_feats: 0
 max_fourier_feat_frequency: 100
 activation: tanh
