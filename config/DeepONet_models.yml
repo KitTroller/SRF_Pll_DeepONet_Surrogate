@@ -1,0 +1,10 @@
+hidden_dim: 64
+output_dim: 1
+num_fourier_feats: 4
+max_fourier_feat_frequency: 100
+activation: tanh
+
+sizes:
+  trunk_net: [1, 64, 64, 64]
+  branch_net: [1503, 64, 64, 64]
+  pinn_net: [1512, 64, 64, 1]
