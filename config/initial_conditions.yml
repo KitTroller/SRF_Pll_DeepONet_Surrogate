@@ -1,5 +1,5 @@
 # 5d initial condition sampling space:
-n_runs: 1000
+n_runs: 5000
 pll_init_dependent_on_initial_grid_angle: true
 pll_init_angle_range_factor: 0.5 # used when flag is true
 Windows: 40

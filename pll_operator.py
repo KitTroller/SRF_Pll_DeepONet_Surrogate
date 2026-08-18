@@ -26,8 +26,9 @@ class Unstacked_DeepONet(nn.Module):
     """output_dim = 1 -> theta only; omega = dtheta/dt - Kp*Vq  (original)
        output_dim = 2 -> [theta, omega]; omega predicted directly (two heads). Trying this out even though we so not care about omega because NN double derivative to find omega was noisy"""
 
-    def __init__(self, model_config=model_config, cfg=None):
+    def __init__(self, model_config=model_config, cfg=None, ov = None):
         super().__init__()
+        ov = ov or  {}
         if cfg is not None:                        # rebuilding a saved network
             self.hidden_dim   = cfg["hidden_dim"]
             self.output_dim   = cfg["output_dim"]
@@ -37,17 +38,18 @@ class Unstacked_DeepONet(nn.Module):
             self.branch_sizes = list(cfg["branch_sizes"])
         else:
             self.hidden_dim = model_config.hidden_dim
-            self.output_dim = model_config.output_dim
+            self.output_dim = ov.get("output_dim", model_config.output_dim)
             self.branch_sizes = list(model_config.sizes.branch_net)
             self.trunk_sizes  = list(model_config.sizes.trunk_net)
-            self.max_freq   = model_config.max_fourier_feat_frequency
+            self.max_freq   = ov.get("max_freq", model_config.max_fourier_feat_frequency)
             self.W = initial_conditions_config.Windows
             self.S = PLL_Constants.sensors
-            self.F = model_config.num_fourier_feats
-            self.trunk_sizes[0] += 2 * self.F  # F is the number of Fourier Feats and we need 1 + Addition[cos(wt/k),sin(wt/k)] k: ranging [1,F] so 1 + 2F
-            self.branch_sizes[0] += 3 * int(self.S / self.W)
+            self.F = ov.get("F", model_config.num_fourier_feats)
+            S_win = ov.get("S_win", int(self.S / self.W))
+            self.trunk_sizes[0] += 2 * self.F
+            self.branch_sizes[0] += 3 * S_win
             self.trunk_sizes[-1]  = self.hidden_dim
-            self.branch_sizes[-1] = self.hidden_dim * self.output_dim   # one block per head because I wanted to
+            self.branch_sizes[-1] = self.hidden_dim * self.output_dim  # one block per head because I wanted to
             
         self.trunk_net = MLP(self.trunk_sizes)
         self.branch_net = MLP(self.branch_sizes)

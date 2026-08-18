@@ -6,4 +6,4 @@ runs.txt
 .DS_Store
 *.py[cod]
 __pycache__/
-pll_dataset.npz
+pll_dataset*

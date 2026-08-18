@@ -132,6 +132,21 @@ class Dataset_Creator():
         records = self.build_records(init_conditions, windowed)
         self.save_dataset(records, self.build_meta(), path)
         return records    
-        
+    def generate_multi_W(self, W_list, path_fmt="pll_dataset_W{W}.npz"):
+        """One LHS draw, one ODE solve, several windowings. Guarantees the W sweep
+        varies ONLY W -- not the initial-condition sample."""
+        init_conditions = self.create_initial_condition_space()
+        print(f"initial conditions: {tuple(init_conditions.shape)}")
+        raw = self.solve_ODEs(init_conditions)              # (n_runs, N); W plays no part
+        for W in W_list:
+            assert self.pll_simulator.N % W == 0, f"W={W} does not divide N={self.pll_simulator.N}"
+            self.W = W
+            self.S = int(self.pll_simulator.N // W)
+            self.t_local = torch.arange(self.S) * self.pll_simulator.dt
+            windowed = {k: v.unfold(1, self.S, self.S).reshape(-1, self.S)
+                        for k, v in raw.items()}
+            self.check_continuity(windowed, raw)
+            self.save_dataset(self.build_records(init_conditions, windowed),
+                            self.build_meta(), path_fmt.format(W=W))
 if __name__ == "__main__":        
-    Dataset_Creator().generate_dataset()
+    pass#Dataset_Creator().generate_dataset()

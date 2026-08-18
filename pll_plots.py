@@ -170,37 +170,38 @@ def fig_prediction_vs_truth(prep, meta, model, ck, val_runs, n_show=10):
 
 # ---------------------------------------------------------------- figure 4
 def fig_window_sweep(prep, meta, model, ck, val_runs, n_runs_avg=20):
-    """c: the window sweep, WITH the control you are missing.
-    'fed back'  = each window starts from the PREDICTED previous state
-    'true IC'   = each window starts from the TRUE state
-    The gap between them is compounding; the 'true IC' line is the model's
-    own one-window error and is what n=1 measures."""
-    W, S, dt = meta["W"], meta["S"], meta["dt"]
+    """'fed back' = each window starts from the PREDICTED previous state
+       'true IC'  = each window starts from the TRUE state
+    The gap is compounding. At n=1 they are the same computation by construction."""
+    W = meta["W"]
     t_local = ck["t_local"]
     dt_ = float(t_local[1] - t_local[0])
     t_ext = torch.cat([t_local, t_local[-1:] + dt_])
-    ns = range(1, W + 1)
-    fed, tru = [], []
 
-    for n in ns:
-        e_f, e_t = [], []
-        for r in val_runs[:n_runs_avg]:
-            row0 = r * W
-            th0, om0 = prep["theta0_abs"][row0], prep["omega0"][row0]
-            pf, pt = [], []
-            for k in range(n):
-                th, om = predict_window(model, ck, th0, om0, prep["Va"][row0+k],
-                                        prep["Vb"][row0+k], prep["Vc"][row0+k], t_ext)
-                pf.append(th[:-1]); th0, om0 = th[-1], om[-1]
-                th2, _ = predict_window(model, ck,
-                                        prep["theta0_abs"][row0+k], prep["omega0"][row0+k],
-                                        prep["Va"][row0+k], prep["Vb"][row0+k],
-                                        prep["Vc"][row0+k], t_ext)
-                pt.append(th2[:-1])
-            truth_th = torch.cat([prep["theta_abs"][row0+k] for k in range(n)])
-            e_f.append(((torch.cat(pf) - truth_th) ** 2).mean().sqrt().item())
-            e_t.append(((torch.cat(pt) - truth_th) ** 2).mean().sqrt().item())
-        fed.append(np.mean(e_f)); tru.append(np.mean(e_t))
+    # ONE pass over the windows. The n=W rollout already contains every shorter
+    # prefix, and the true-IC prediction for window k does not depend on n.
+    # W=40: 80 predict_window calls per run instead of 1640.
+    fed_sq, tru_sq = [], []                                  # per-window MEAN SQUARE
+    for r in val_runs[:n_runs_avg]:
+        row0 = r * W
+        th0, om0 = prep["theta0_abs"][row0], prep["omega0"][row0]
+        f_w, t_w = [], []
+        for k in range(W):
+            truth_k = prep["theta_abs"][row0 + k]
+            th, om = predict_window(model, ck, th0, om0, prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext)
+            f_w.append(((th[:-1] - truth_k) ** 2).mean().item())
+            th0, om0 = th[-1], om[-1]                        # the feedback
+            th2, _ = predict_window(model, ck, prep["theta0_abs"][row0 + k], prep["omega0"][row0 + k], prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext)
+            t_w.append(((th2[:-1] - truth_k) ** 2).mean().item())
+        fed_sq.append(f_w); tru_sq.append(t_w)
+
+    fed_sq, tru_sq = np.array(fed_sq), np.array(tru_sq)      # (runs, W)
+    # RMS over the first n windows = sqrt(mean of the per-window mean-squares).
+    # Exact, because every window contributes the same number of points (S).
+    ns  = np.arange(1, W + 1)
+    fed = [np.sqrt(fed_sq[:, :n].mean(axis=1)).mean() for n in ns]
+    tru = [np.sqrt(tru_sq[:, :n].mean(axis=1)).mean() for n in ns]
+
 
     fig, ax = plt.subplots(1, 2, figsize=(11, 4))
     ax[0].plot(ns, fed, "o-", label="state fed back (recurrent)")

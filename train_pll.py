@@ -6,6 +6,9 @@ from omegaconf import OmegaConf
 from torch.utils.data import Dataset, DataLoader
 from pytorch_optimizer import SOAP
 from pathlib import Path
+import time
+import json
+import numpy as np
 
 from dataset_generator import Dataset_Creator
 from pll_operator import Unstacked_DeepONet, Single_PINN
@@ -100,7 +103,7 @@ def batches(tensors, n, batch_size, shuffle, device, drop_last):
         b = idx[i:i + batch_size]
         yield tuple(t[b] for t in tensors)
         
-def assemble_batch(batch, t_local, mu, sd):  # probably unused now
+def assemble_batch(batch, t_local, mu, sd):  # DO NOT READ UNUSED should be deleted kept for emotional purposes
     sin_theta_0, cos_theta_0, omega0, Va, Vb, Vc, Vq, target_theta, target_omega = batch  # is a dataloader instance of 64 elements (B, n_runs, 500)
     B = omega0.shape[0]
     branch = torch.cat([sin_theta_0.unsqueeze(-1), cos_theta_0.unsqueeze(-1), ((omega0 - mu) / sd).unsqueeze(-1), Va, Vb, Vc], dim=-1)
@@ -132,13 +135,13 @@ def run_epoch(model, tensors, n, t_local, w_omega, w_phys, s1, s2, batch_size, o
         tot["phys"] += l_ph.item();  tot["total"] += loss.item(); nb += 1
     return {k: v / nb for k, v in tot.items()}
 
-def save_checkpoint(path, model, meta, mu, sd, w_omega, s1, s2, t_local, history, best_epoch):
+def save_checkpoint(path, model, meta, mu, sd, w_omega, s1, s2, t_local, history, best_epoch, w_phys=None):
     torch.save({"state_dict": {k: v.cpu() for k, v in model.state_dict().items()}, "cfg": model.config(),
                 "mu": mu.cpu(), "sd": sd.cpu(), "w_omega": w_omega,
                 "s1": s1, "s2": s2,
                 "t_local": t_local.cpu(), "deviation": True,
                 "omega_base": OMEGA_BASE, "data_meta": meta,
-                "history": history, "best_epoch": best_epoch}, path)
+                "history": history, "best_epoch": best_epoch, "w_phys": w_phys}, path)
     
 def load_checkpoint(path, device="cpu"):
     ck = torch.load(path, map_location="cpu", weights_only=False)
@@ -151,14 +154,12 @@ def load_checkpoint(path, device="cpu"):
 
 
 
-def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0,
-         batch_size=512, val_frac=0.15, patience=20, seed=0,
-         out="pll_deeponet.pth", device=DEVICE):
+def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=512, val_frac=0.15, patience=20, seed=0, split_seed=0, F=None, out=None, device=DEVICE, n_eval_runs=20, results_dir="sweeps", runs_dir="runs", max_freq=None):
     torch.manual_seed(seed)
     data, meta = Dataset_Creator.load_dataset(dataset)
     prep = prepare(data, deviation=True)
 
-    tr, va = group_split(prep["run_id"], val_frac, seed)
+    tr, va = group_split(prep["run_id"], val_frac, split_seed)
     assert not (set(prep["run_id"][tr].tolist()) & set(prep["run_id"][va].tolist()))
     print(f"device {device} | {tr.sum().item()} train / {va.sum().item()} val rows")
 
@@ -171,25 +172,40 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0,
     print(f"mu={mu:.4f} sd={sd:.4f} w_omega={w_omega:.4e} | s1={s1:.3f} rad/s  s2={s2:.3f} rad/s^2")
 
     branch = build_branch(prep, mu, sd)
-    pack = lambda m: tuple(t[m].to(device) for t in
-                           (branch, prep["Vq"], prep["target_theta"], prep["target_omega"]))
+    pack = lambda m: tuple(t[m].to(device) for t in (branch, prep["Vq"], prep["target_theta"], prep["target_omega"]))
     tr_t, va_t = pack(tr), pack(va)
     n_tr, n_va = int(tr.sum()), int(va.sum())
     t_local = prep["t_local"].to(device)
 
-    model = Unstacked_DeepONet().to(device)
-    print(f"output_dim={model.output_dim} branch_in={model.branch_sizes[0]} "
-          f"trunk_in={model.trunk_sizes[0]} params={sum(p.numel() for p in model.parameters()):,}")
+    ov = {"S_win": meta["S"]}                                      
+    if F is not None:
+        ov["F"] = F
+    if max_freq is not None: ov["max_freq"] = max_freq 
+    model = Unstacked_DeepONet(ov=ov).to(device)                 
+
+    tag = (f"{Path(dataset).stem}_n{meta['n_runs']}_W{meta['W']}_F{model.F}" f"_mf{model.max_freq:g}_wp{w_phys:g}_s{seed}sp{split_seed}")
+    Path(runs_dir).mkdir(exist_ok=True); Path(results_dir).mkdir(exist_ok=True)
+    out = out or f"{runs_dir}/{tag}.pth"
+    print(f"[{tag}] output_dim={model.output_dim} branch_in={model.branch_sizes[0]} " f"trunk_in={model.trunk_sizes[0]} params={sum(p.numel() for p in model.parameters()):,}")
+
+    t_start = time.perf_counter()
 
     opt = SOAP(model.parameters(), lr=lr, betas=(.95, .95), weight_decay=.01, precondition_frequency=10)
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=max(3, patience // 3))
 
     best, best_state, best_ep, bad = float("inf"), None, -1, 0
     history = {"train": [], "val": []}
+    status = "ok"
     for ep in range(1, epochs + 1):
         trm = run_epoch(model, tr_t, n_tr, t_local, w_omega, w_phys, s1, s2, batch_size, opt, device)
         vam = run_epoch(model, va_t, n_va, t_local, w_omega, w_phys, s1, s2, batch_size, None, device)
+        if (not np.isfinite(vam["total"])) or (ep > 3 and vam["total"] > 50 * best):
+            status = "diverged"
+            print(f"[{tag}] DIVERGED at epoch {ep}: val total {vam['total']:.3e} "
+                  f"vs best {best:.3e} -- aborting")
+            break
         history["train"].append(trm); history["val"].append(vam)
+        
         sched.step(vam["total"])
         improved = vam["total"] < best - 1e-9
         if improved:
@@ -204,10 +220,36 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0,
         if bad >= patience:
             print(f"early stop at {ep} (best {best_ep})"); break
 
-    model.load_state_dict(best_state)
-    save_checkpoint(out, model, meta, mu, sd, w_omega, s1, s2, t_local, history, best_ep)
-    print(f"saved {out} (best epoch {best_ep})")
+    seconds = round(time.perf_counter() - t_start, 1)
+    rec = {"tag": tag, "status": status, "dataset": dataset,
+           "W": meta["W"], "S": meta["S"], "dt": meta["dt"],
+           "window_s": meta["S"] * meta["dt"],
+           "F": model.F, "max_freq": model.max_freq, "w_phys": w_phys,
+           "seed": seed, "split_seed": split_seed, "lr": lr,
+           "batch_size": batch_size, "device": str(device),
+           "epochs_run": len(history["val"]), "seconds": seconds}
+    if status == "ok" and best_state is not None:
+        model.load_state_dict(best_state)
+        save_checkpoint(out, model, meta, mu, sd, w_omega, s1, s2,
+                        t_local, history, best_ep, w_phys)
+        h = history["val"][best_ep - 1]
+        rec.update({"best_epoch": best_ep, "ckpt": out,
+                    "val_th": h["theta"], "val_om": h["omega"],
+                    "r1": h["r1"], "r2": h["r2"],
+                    "train_th": history["train"][best_ep - 1]["theta"]})
+        from pll_infer import rollout_metrics          # deferred: circular import
+        ev_model, ck = load_checkpoint(out)
+        val_runs = sorted(set(prep["run_id"][va].tolist()))
+        rec.update(rollout_metrics(ev_model, ck, prep, val_runs, meta["W"], n_eval_runs))
+        print(f"[{tag}] rollout_full_rms {rec['rollout_full_rms']:.4e}  "
+              f"compounding {rec['compounding']:.2f}x  ({seconds:.0f}s)")
+    else:
+        rec["status"] = "diverged"                    # also covers best_state=None
+        print(f"[{tag}] DIVERGED -- no checkpoint written ({seconds:.0f}s)")
 
+    p = Path(results_dir) / f"{tag}.json"
+    tmp = p.with_suffix(".tmp"); tmp.write_text(json.dumps(rec, indent=2)); tmp.replace(p)
+    return rec
 
 if __name__ == "__main__":
     main(epochs=200, w_phys=0.0)
