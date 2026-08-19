@@ -10,3 +10,12 @@ ranges:
   theta_pll: [-3.141592653589793, 3.141592653589793] # rad
   omega_pll: [-20, 20] # rad/s
 
+disturbances:
+  enabled: true
+  fraction: 0.5 # percentage of runs we get a fault on
+  start: [0.05,0.40]
+  sag:
+    depth: [0.5, 0.95]  # p.u.
+    duration: [0.02, 0.10]
+  phase_jump:
+    angle_deg: [-60, 60]

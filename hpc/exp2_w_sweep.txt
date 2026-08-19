@@ -1,0 +1,35 @@
+# W sweep at n_runs=5000, one LHS family -- 3 window lengths x 4 seeds = 12 jobs.
+#
+# Never done under the fixed (two-head) loss. The old "W=40 is optimal" was measured
+# when the physics term outweighed the theta term by up to 17800x and is void; the
+# W=20-vs-W=40 numbers in the notes are on two different families and are not a valid
+# comparison either. famB fixes both: one LHS draw, one ODE solve, four windowings.
+#
+# Compare on rollout_full_rms -- it is always 0.5 s of physical time because the
+# rollout runs n = W windows. Do NOT compare val_th across W: shorter windows shrink
+# the target variance, so it is not commensurable (fine WITHIN a W).
+#
+# 4 seeds, not 16. The W effect is large -- W=20 vs W=40 differed ~7x on per-window
+# error -- so it sits far above seed noise. Seeds are only expensive where the effect
+# is small, which is exp1's problem, not this one.
+#
+# max_freq held at 503 for every W by ASSUMPTION, not result: F20 rejected 2*pi/T and
+# w_base at W=20, leaving a fixed absolute frequency as the only reading standing.
+# Holding it fixed makes W the only variable. If exp1 picks 628 over 503, redo this.
+#
+# W=40 is not here -- exp1 trains it. When exp1 finishes, copy across seeds 0-3 only,
+# so every W in the table has the same seed count:
+#   for s in 0 1 2 3; do cp sweeps_famB_ff/famB_W40_*mf503*_s${s}sp0.json sweeps_famB_W/; done
+
+--dataset famB_W10.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W10.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W10.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W10.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W100.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W100.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W100.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W100.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W

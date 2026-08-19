@@ -1,0 +1,12 @@
+--dataset famB_W10.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W10.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W10.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W10.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W100.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W100.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W100.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W
+--dataset famB_W100.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_W

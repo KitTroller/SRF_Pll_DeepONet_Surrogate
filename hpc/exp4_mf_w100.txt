@@ -1,0 +1,24 @@
+# max_freq at W=100 -- closes the F32 caveat and re-tests F20 at a THIRD window length.
+#
+# The whole W sweep held mf=503 fixed by assumption. That is 1.00 cycles per window at
+# W=40 but only 0.40 at W=100, so W=100 may have been handicapped by an unsuited basis
+# and its tie with W=40 is a lower bound.
+#
+# The two hypotheses are far apart here, which makes this a clean discriminator:
+#   basis (2*pi/T)          -> 1257 rad/s at W=100 (5 ms window)
+#   fixed absolute (F20)    ->  503 rad/s, unchanged
+# F20 rejected the basis reading at W=20 and mf503 tied mf628 at W=40, so "fixed
+# absolute" is the standing reading -- but it has never been tested where the two
+# predictions differ by 2.5x. If 1257 wins here, F20 is wrong and the W sweep needs
+# redoing with mf tuned per W.
+#
+# 314 = w_base (rejected at W=20, included as a control), 754 = midpoint.
+# 4 frequencies x 2 seeds = 8 jobs.
+--dataset famB_W100.npz --F 4 --max_freq 314 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_mfW100
+--dataset famB_W100.npz --F 4 --max_freq 314 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_mfW100
+--dataset famB_W100.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_mfW100
+--dataset famB_W100.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_mfW100
+--dataset famB_W100.npz --F 4 --max_freq 754 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_mfW100
+--dataset famB_W100.npz --F 4 --max_freq 754 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_mfW100
+--dataset famB_W100.npz --F 4 --max_freq 1257 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_mfW100
+--dataset famB_W100.npz --F 4 --max_freq 1257 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_mfW100
