@@ -1,0 +1,48 @@
+##### famD seed 0
+famD_W40.npz  W=40  750 validation runs  n_eval=150
+
+  subset         n    roll_rms    roll_med     per_win   comp
+  clean        150  3.0007e-04  2.4792e-04  1.0467e-04   2.87
+  sag          150  4.8232e-04  4.1266e-04  1.5188e-04   3.18
+  phase_jump   150  6.0326e-04  4.1976e-04  1.8175e-04   3.32
+  ALL (mixed)  150  4.7857e-04  3.7597e-04  1.5165e-04   3.16   <- what the record says
+##### famD seed 1
+famD_W40.npz  W=40  750 validation runs  n_eval=150
+
+  subset         n    roll_rms    roll_med     per_win   comp
+  clean        150  3.0004e-04  2.5363e-04  1.0363e-04   2.90
+  sag          150  4.9275e-04  3.8125e-04  1.3758e-04   3.58
+  phase_jump   150  6.3953e-04  4.3951e-04  1.7933e-04   3.57
+  ALL (mixed)  150  4.9246e-04  3.5855e-04  1.4061e-04   3.50   <- what the record says
+##### famD seed 2
+famD_W40.npz  W=40  750 validation runs  n_eval=150
+
+  subset         n    roll_rms    roll_med     per_win   comp
+  clean        150  3.0716e-04  2.4852e-04  1.0259e-04   2.99
+  sag          150  4.3154e-04  3.6769e-04  1.4131e-04   3.05
+  phase_jump   150  5.1737e-04  3.8848e-04  1.5883e-04   3.26
+  ALL (mixed)  150  4.3005e-04  3.4734e-04  1.3409e-04   3.21   <- what the record says
+##### famD seed 3
+famD_W40.npz  W=40  750 validation runs  n_eval=150
+
+  subset         n    roll_rms    roll_med     per_win   comp
+  clean        150  2.8379e-04  2.4619e-04  9.9354e-05   2.86
+  sag          150  4.5981e-04  3.7715e-04  1.3505e-04   3.40
+  phase_jump   150  5.9270e-04  4.1093e-04  1.7236e-04   3.44
+  ALL (mixed)  150  4.4793e-04  3.3920e-04  1.3856e-04   3.23   <- what the record says
+##### famD seed 4
+famD_W40.npz  W=40  750 validation runs  n_eval=150
+
+  subset         n    roll_rms    roll_med     per_win   comp
+  clean        150  3.1977e-04  2.8554e-04  1.0117e-04   3.16
+  sag          150  5.1853e-04  4.5398e-04  1.3962e-04   3.71
+  phase_jump   150  6.0039e-04  4.3278e-04  1.6369e-04   3.67
+  ALL (mixed)  150  4.6814e-04  3.8410e-04  1.3411e-04   3.49   <- what the record says
+##### famD seed 5
+famD_W40.npz  W=40  750 validation runs  n_eval=150
+
+  subset         n    roll_rms    roll_med     per_win   comp
+  clean        150  2.5789e-04  2.3311e-04  9.3338e-05   2.76
+  sag          150  3.9990e-04  3.3864e-04  1.2286e-04   3.25
+  phase_jump   150  5.0121e-04  3.7011e-04  1.4739e-04   3.40
+  ALL (mixed)  150  3.8333e-04  3.0312e-04  1.2395e-04   3.09   <- what the record says

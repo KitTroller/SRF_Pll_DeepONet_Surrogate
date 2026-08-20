@@ -1,0 +1,29 @@
+OOD ladder  |  32 runs x 0.5 s, reference = 12.5 us trapezoid
+   family: 5000 sensors, dt=100 us, W=40   (2 checkpoint(s))
+   family: 10000 sensors, dt=50 us, W=80   (2 checkpoint(s))
+
+  scenario                           ours [dt=100 us]      floor      ours [dt=50 us]      floor   turns
+  in-distribution (control)                 1.020e-03  9.305e-04            6.446e-04  5.882e-04      0/32
+  freq offset x2  (+/-0.4 Hz)               1.031e-03  9.269e-04            6.621e-04  5.863e-04      0/32
+  freq offset x5  (+/-1.0 Hz)               1.083e-03  9.195e-04            6.793e-04  5.835e-04      0/32
+  amp offset x3   (+/-0.15 pu)              1.066e-03  9.318e-04            6.689e-04  5.852e-04      0/32
+  omega_0 x2      (+/-40 rad/s)             3.636e-02  9.737e-04            5.036e-02  6.101e-04      0/32
+  omega_0 x4      (+/-80 rad/s)             5.704e+00  6.426e-03            5.711e+00  7.060e-03     10/32
+  sag DEEP        (0.1-0.5 pu)              2.689e-03  1.056e-03            1.085e-03  6.513e-04      0/32
+  sag LONG        (0.1-0.3 s)               1.294e-03  1.039e-03            8.280e-04  6.496e-04      0/32
+  jump BIG        (+/-120 deg)              1.026e-02  9.771e-04            1.152e-03  6.078e-04      0/32
+  sag trained     (0.5-0.95 pu)             1.163e-03  9.616e-04            7.042e-04  6.040e-04      0/32
+  jump trained    (+/-60 deg)               1.374e-03  9.375e-04            6.968e-04  5.900e-04      0/32
+
+-> /Users/andreasodontopoulos/Desktop/DTU/Summer_Internship_2026/PLL_Attempt/graphs/15_ood_ladder.png
+
+turns off  = runs whose FINAL error is a whole multiple of 2*pi away, i.e. the
+             surrogate counted cycle slips differently from the reference. That
+             is a discrete failure worth 2*pi each, not a loss of precision.
+ours/ctrl  = degradation of the surrogate vs its in-distribution control
+solv/ctrl  = how much harder the scenario is to INTEGRATE at all -- the part
+             that is physics, not extrapolation
+ours/solv  = the surrogate's excess over the floor at its own step. This is
+             the number that isolates extrapolation: if it stays near the
+             control's value the operator is still doing its job, whatever
+             happened to the absolute error.

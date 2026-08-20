@@ -407,24 +407,18 @@ def accuracy_benchmark(dt_fine=12.5e-6, horizon=0.5, n_runs=24,
     t_axis = np.arange(W * S) * dt_c
     GRAPHS.mkdir(exist_ok=True)
 
-    fig, ax = plt.subplots(1, 2, figsize=(13, 4.6))
+    # SINGLE panel since 2026-08-20. The cost-vs-accuracy scatter that used to sit on the
+    # right was a duplicate of graphs/12, which draws the same plot AND includes the
+    # paper's own network -- strictly the better version. What is unique here is the TIME
+    # axis: WHERE in the 0.5 s the error lives, which no other figure shows.
+    fig, ax = plt.subplots(figsize=(8.8, 5.0))
     for k, e in err.items():
-        ax[0].semilogy(t_axis, e.abs().mean(dim=0).numpy(), lw=1.0, label=k)
-    ax[0].set_xlabel("time [s]"); ax[0].set_ylabel(r"$|\theta$ error$|$, mean over runs [rad]")
-    ax[0].set_title(f"error against a {dt_fine*1e6:.1f} us trapezoidal reference")
-    ax[0].grid(alpha=0.3, which="both"); ax[0].legend(fontsize=8)
-
-    for k in err:
-        ax[1].scatter(cost[k], rms[k], s=90, label=k, zorder=3)
-        ax[1].annotate(k, (cost[k], rms[k]), textcoords="offset points",
-                       xytext=(6, 6), fontsize=8)
-    ax[1].set_xscale("log"); ax[1].set_yscale("log")
-    ax[1].margins(0.25)                                # else the top label clips
-    ax[1].set_xlabel("compute [ms per simulated second]")
-    ax[1].set_ylabel(r"$\theta$ RMS error [rad]")
-    ax[1].set_title("down and left is better")
-    ax[1].grid(alpha=0.3, which="both")
-    fig.suptitle("Does the coarser step cost accuracy?")
+        ax.semilogy(t_axis, e.abs().mean(dim=0).numpy(), lw=1.0, label=k)
+    ax.set_xlabel("time [s]"); ax.set_ylabel(r"$|\theta$ error$|$, mean over runs [rad]")
+    ax.grid(alpha=0.3, which="both"); ax.legend(fontsize=8)
+    ax.set_title(f"Where the error lives in time — vs a {dt_fine*1e6:.1f} $\\mu$s "
+                 f"trapezoidal reference\n{n_runs} runs x {horizon} s. "
+                 f"Cost vs accuracy is graphs/12.", fontsize=10)
     fig.tight_layout(); fig.savefig(GRAPHS / "09_accuracy_vs_step.png", dpi=160)
     print(f"-> {GRAPHS / '09_accuracy_vs_step.png'}")
     return rms, cost

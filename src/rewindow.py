@@ -34,19 +34,31 @@ def rewindow(src, W_new, out=None):
     meta = json.loads(z["meta_json"].item())
     W_old, S_old, n_runs = meta["W"], meta["S"], meta["n_runs"]
     S_new = meta["N"] // W_new
-    if S_old % S_new:
-        raise SystemExit(f"S_new={S_new} does not divide S_old={S_old}: "
-                         f"W_new={W_new} must be a multiple of W_old={W_old}")
-    k = S_old // S_new                                   # pieces per stored window
+    # Two directions, both exact. SPLIT (W_new > W_old) cuts each stored window into
+    # equal pieces; MERGE (W_new < W_old) glues consecutive windows back together. Merge
+    # is what lets famE_W40 (S=250) be derived from famE_W80 (S=125) without a fresh
+    # generate -- and therefore without a fresh unseeded LHS draw, which would make the
+    # two incomparable. That comparison is the one that separates "halved dt" from
+    # "halved window length" in F48.
+    if S_new < S_old:
+        if S_old % S_new:
+            raise SystemExit(f"split: S_new={S_new} does not divide S_old={S_old}: "
+                             f"W_new={W_new} must be a multiple of W_old={W_old}")
+    elif S_new > S_old:
+        if S_new % S_old or W_old % W_new:
+            raise SystemExit(f"merge: W_new={W_new} must divide W_old={W_old} "
+                             f"(S_old={S_old} must divide S_new={S_new})")
+    else:
+        raise SystemExit(f"W_new={W_new} is already the file's windowing")
 
     out_arrays = {}
     for name in z.files:
         if name == "meta_json" or name in _PER_WINDOW_SKIP:
             continue
         a = z[name]                                       # (n_runs*W_old, S_old)
-        # (runs, W_old, S_old) -> (runs, W_old, k, S_new) -> (runs*W_new, S_new).
-        # C-order keeps time in order: window w piece p becomes new window w*k + p.
-        out_arrays[name] = a.reshape(n_runs, W_old, k, S_new).reshape(-1, S_new)
+        # Both directions are the same reshape through the flat (runs, N) layout, which
+        # is C-contiguous in time -- so no sample ever moves relative to another.
+        out_arrays[name] = a.reshape(n_runs, W_old * S_old).reshape(-1, S_new)
 
     dt = meta["dt"]
     out_arrays["t_local"]    = (np.arange(S_new) * dt).astype(np.float64)

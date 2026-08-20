@@ -75,6 +75,22 @@ class Dataset_Creator():
 
         return params, kind
         
+    def create_gain_space(self):
+        """Per-run (Kp, Ki), LHS-sampled like the ICs. None when disabled.
+
+        PLL_Simulator needs NO change to support this: `_integrator_step_trapezoid`
+        computes b = (dt/2)*(Kp + (dt/2)*Ki) and every downstream term broadcasts over
+        (n_runs,), so assigning tensors to physics.Kp/Ki is enough. Verified: four runs
+        with different gains give four different settling times.
+        """
+        cfg = self.init_cond.get("gains", None)
+        if cfg is None or not cfg.enabled:
+            return None
+        u = torch.as_tensor(self._lhs(2, self.n_runs), dtype=torch.get_default_dtype())
+        kp = cfg.Kp[0] + (cfg.Kp[1] - cfg.Kp[0]) * u[:, 0]
+        ki = cfg.Ki[0] + (cfg.Ki[1] - cfg.Ki[0]) * u[:, 1]
+        return torch.stack([kp, ki], dim=-1)                      # (n_runs, 2)
+
     def create_initial_condition_space(self, variables=5, total_samples=1000):
         """LHS sampling 5d initial condition grid directly, n_runs points shape of outout (n_runs, 5)"""
         total_samples = self.n_runs
@@ -96,9 +112,12 @@ class Dataset_Creator():
             samples[:, 3] = (samples[:, 3] + np.pi) % (2 * np.pi) - np.pi # wrapps thetapll init to -pi, pi again
         return torch.Tensor(samples)
 
-    def solve_ODEs(self, init_conditions, disturbances=None):
+    def solve_ODEs(self, init_conditions, disturbances=None, gains=None):
         """Takes in (n_runs,5) different initial conditions and uses the physics engine to produce a dictionary for all the variables in a 1s time window each of shape (n_runs,N) where N is the number of sensors/samples"""
         pll_simulator = self.pll_simulator
+        if gains is not None:                    # per-run controller gains
+            pll_simulator.physics.Kp = gains[:, 0]
+            pll_simulator.physics.Ki = gains[:, 1]
         sag = jump = None
         if disturbances is not None:
             p = disturbances                              
@@ -121,10 +140,10 @@ class Dataset_Creator():
         }
 
       
-    _F64 = {"theta_pll", "omega_pll", "t_local", "theta0", "omega0", "lhs_samples"}
+    _F64 = {"theta_pll", "omega_pll", "t_local", "theta0", "omega0", "lhs_samples", "kp", "ki"}
     _INT = {"run_id", "segment_id", "fault_kind", "window_faulted"}
 
-    def build_records(self, init_conditions, windowed, disturbance=None, kind=None):
+    def build_records(self, init_conditions, windowed, disturbance=None, kind=None, gains=None):
         W = self.W
         records = dict(windowed)
         records["t_local"]     = self.t_local
@@ -133,6 +152,10 @@ class Dataset_Creator():
         records["run_id"]      = torch.arange(self.n_runs).repeat_interleave(W)
         records["segment_id"]  = torch.arange(W).repeat(self.n_runs)
         records["lhs_samples"] = init_conditions
+
+        if gains is not None:                    # per-run, broadcast to every window row
+            records["kp"] = gains[:, 0].repeat_interleave(W)
+            records["ki"] = gains[:, 1].repeat_interleave(W)
 
         if disturbance is not None:
             S, dt = self.S, self.pll_simulator.dt
@@ -154,7 +177,11 @@ class Dataset_Creator():
         return {
             "dt": float(sim.dt), "N": int(sim.N), "W": int(self.W),
             "S": int(sim.N // self.W), "n_runs": int(self.n_runs),
-            "Kp": float(ph.Kp), "Ki": float(ph.Ki), "omega_0": float(ph.omega_0),
+            # Kp/Ki become per-run TENSORS when gains are sampled, so there is no single
+            # value to record. None is the honest answer; the ranges live under "gains".
+            "Kp": None if torch.is_tensor(ph.Kp) else float(ph.Kp),
+            "Ki": None if torch.is_tensor(ph.Ki) else float(ph.Ki),
+            "omega_0": float(ph.omega_0),
             "v_nominal": float(ph.v_nominal),
             "noise_amplitude": float(ph.noise_amplitude),
             "columns": ["initial_grid_angle", "frequency_offset", "amplitude_offset", "theta_pll", "omega_pll"],
@@ -163,6 +190,7 @@ class Dataset_Creator():
             "disturbance_columns": ["sag_t0", "sag_duration", "sag_depth", "jump_t0", "jump_angle_rad"],
             "fault_kind_values": {"0": "none", "1": "sag", "2": "phase_jump"},
             "disturbances": OmegaConf.to_container(self.init_cond.get("disturbances", {}), resolve=True),
+            "gains": OmegaConf.to_container(self.init_cond.get("gains", {}), resolve=True),
         }
 
     def save_dataset(self, records, meta, path="pll_dataset.npz"):
@@ -197,10 +225,11 @@ class Dataset_Creator():
     def generate_dataset(self, path="pll_dataset.npz"):
         init_conditions = self.create_initial_condition_space()
         disturbance, kind = self.create_disturbance_space()
-        raw = self.solve_ODEs(init_conditions, disturbance)
+        gains = self.create_gain_space()
+        raw = self.solve_ODEs(init_conditions, disturbance, gains)
         windowed = {k: v.unfold(1, self.S, self.S).reshape(-1, self.S) for k, v in raw.items()}
         self.check_continuity(windowed, raw)
-        records = self.build_records(init_conditions, windowed, disturbance, kind)
+        records = self.build_records(init_conditions, windowed, disturbance, kind, gains)
         self.save_dataset(records, self.build_meta(), path)
         return records
            
@@ -209,8 +238,10 @@ class Dataset_Creator():
         varies ONLY W -- not the initial-condition sample."""
         init_conditions = self.create_initial_condition_space()
         disturbance, kind = self.create_disturbance_space()
-        print(f"initial conditions: {tuple(init_conditions.shape)}")
-        raw = self.solve_ODEs(init_conditions, disturbance)              # (n_runs, N); W plays no part
+        gains = self.create_gain_space()
+        print(f"initial conditions: {tuple(init_conditions.shape)}"
+              + (f"  gains: {tuple(gains.shape)}" if gains is not None else "  gains: fixed"))
+        raw = self.solve_ODEs(init_conditions, disturbance, gains)        # (n_runs, N); W plays no part
         
         for W in W_list:
             assert self.pll_simulator.N % W == 0, f"W={W} does not divide N={self.pll_simulator.N}"
@@ -219,7 +250,7 @@ class Dataset_Creator():
             self.t_local = torch.arange(self.S) * self.pll_simulator.dt
             windowed = {k: v.unfold(1, self.S, self.S).reshape(-1, self.S) for k, v in raw.items()}
             self.check_continuity(windowed, raw)
-            self.save_dataset(self.build_records(init_conditions, windowed, disturbance, kind), self.build_meta(), path_fmt.format(W=W))
+            self.save_dataset(self.build_records(init_conditions, windowed, disturbance, kind, gains), self.build_meta(), path_fmt.format(W=W))
             
 if __name__ == "__main__":        
     pass#Dataset_Creator().generate_dataset()

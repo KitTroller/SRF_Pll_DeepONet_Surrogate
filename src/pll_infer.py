@@ -25,11 +25,22 @@ def interp1d(x_src, y_src, x_query):
     return y_src[lo] + w * (y_src[hi] - y_src[lo])
 
 
-def predict_window(model, checkpoint, theta0, omega0, Va, Vb, Vc, times=None):
+def predict_window(model, checkpoint, theta0, omega0, Va, Vb, Vc, times=None, kp=None, ki=None):
     mu, sd = checkpoint["mu"], checkpoint["sd"]
     t = checkpoint["t_local"] if times is None else times
     T = t.shape[0]
-    branch = torch.cat([torch.sin(theta0).view(1, 1), torch.cos(theta0).view(1, 1), ((omega0 - mu) / sd).view(1, 1), Va.view(1, -1), Vb.view(1, -1), Vc.view(1, -1)], dim=-1)
+    cols = [torch.sin(theta0).view(1, 1), torch.cos(theta0).view(1, 1), ((omega0 - mu) / sd).view(1, 1), Va.view(1, -1), Vb.view(1, -1), Vc.view(1, -1)]
+    if getattr(model, "n_extra", 0):
+        # gains model: Kp and Ki are INPUTS, appended in the same order build_branch uses.
+        # Defaulting them silently would produce a confidently wrong answer, so refuse.
+        gstat = checkpoint.get("gstat")
+        if gstat is None or kp is None or ki is None:
+            raise ValueError("this checkpoint takes Kp and Ki as inputs -- pass kp= and ki= "
+                             "to predict_window (and the checkpoint must carry 'gstat')")
+        (kmu, ksd), (imu, isd) = gstat
+        cols += [torch.as_tensor((float(kp) - kmu) / ksd).view(1, 1).to(Va.dtype),
+                 torch.as_tensor((float(ki) - imu) / isd).view(1, 1).to(Va.dtype)]
+    branch = torch.cat(cols, dim=-1)
 
     if model.output_dim == 2:
         # theta and omega are DIRECT network outputs here. compute_theta_omega would
@@ -60,6 +71,12 @@ def predict_window(model, checkpoint, theta0, omega0, Va, Vb, Vc, times=None):
 
 
 
+def _gains(prep, row):
+    """(kp, ki) for one window row, or (None, None) when the dataset has no gains.
+    predict_window REFUSES to guess, so this has to be explicit at every call site."""
+    return (None, None) if "kp" not in prep else (prep["kp"][row], prep["ki"][row])
+
+
 def rollout(model, checkpoint, prep, run_idx, n_windows, W):
     if n_windows > W:
         raise ValueError(f"n_windows={n_windows} > W={W}: the rollout would walk " f"into the next run, which has a different grid scenario")
@@ -70,7 +87,8 @@ def rollout(model, checkpoint, prep, run_idx, n_windows, W):
     theta0, omega0 = prep["theta0_abs"][row0], prep["omega0"][row0]
     th_all, om_all = [], []
     for k in range(n_windows):
-        th, om = predict_window(model, checkpoint, theta0, omega0, prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext)
+        kp, ki = _gains(prep, row0 + k)
+        th, om = predict_window(model, checkpoint, theta0, omega0, prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext, kp, ki)
         th_all.append(th[:-1]); om_all.append(om[:-1])
         theta0, omega0 = th[-1], om[-1]  # the feedback
     return torch.cat(th_all), torch.cat(om_all)
@@ -92,13 +110,14 @@ def rollout_metrics(model, checkpoint, prep, val_runs, W, n_runs_avg=20):
         th0, om0 = prep["theta0_abs"][row0], prep["omega0"][row0]
         pf, pt = [], []
         for k in range(W):
+            kp, ki = _gains(prep, row0 + k)
             th, om = predict_window(model, checkpoint, th0, om0, prep["Va"][row0 + k],
-                                    prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext)
+                                    prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext, kp, ki)
             pf.append(th[:-1]); th0, om0 = th[-1], om[-1]          # the feedback
             th2, _ = predict_window(model, checkpoint,
                                     prep["theta0_abs"][row0 + k], prep["omega0"][row0 + k],
                                     prep["Va"][row0 + k], prep["Vb"][row0 + k],
-                                    prep["Vc"][row0 + k], t_ext)
+                                    prep["Vc"][row0 + k], t_ext, kp, ki)
             pt.append(th2[:-1])                                     # true IC, no chaining
         truth_th = torch.cat([prep["theta_abs"][row0 + k] for k in range(W)])
         fed_e.append(torch.cat(pf) - truth_th)

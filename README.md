@@ -39,23 +39,36 @@ The departures from Karampinis are what this project is testing:
 | component | 4th-order synchronous machine | SRF-PLL (from Ventura et al.) |
 | horizon | one trajectory over `[0,T]` in a single forward pass | `W` short windows applied **recurrently**, each fed its own predicted state |
 | physics loss | separate collocation set, 1e6 points, `lambda_pd=1e-3` / `lambda_pc=1e-4` | residual on the data points, one weight `w_phys` (0.3) |
-| baseline | RK45, `>30x` single / `6720x` batched | trapezoidal implicit Newton, `56x`, plus the paper NN above |
+| baseline | RK45 running sequentially, `>30x` single / `6720x` at 1000 trajectories | trapezoidal implicit Newton, already **vectorised**: `53x` single, narrowing to `2.4x` at batch 512 — plus the paper NN above |
 
 The recurrent handover is the substantive one: single-shot over `[0,T]` never tests whether
 the operator's own output is a usable initial condition, and that is the whole question for
 a simulator drop-in.
 
-Current headline (n_runs=5000, W=40, F=4, max_freq=503, w_phys=0.3):
+Current headline (n_runs=5000, W=40, F=4, max_freq=503, w_phys=0.3, 6 seeds):
 
 | | |
 |---|---|
-| deployed theta RMS, 0.5 s, 40 handovers, clean runs | **3.00e-4 rad = 0.017 deg** |
-| vs the trivial `theta0 + w_base*t` baseline | **~3100x** |
-| vs the trapezoidal solver at the same step | **56x cheaper**, 1.05-1.11x the error |
-| vs the paper's own NN, inside its trained range | tie on accuracy, half the compute |
-| vs the paper's own NN, full envelope | 5.3x more accurate |
+| deployed theta RMS, 0.5 s, 40 handovers, clean runs | **3.00e-4 rad = 0.017 deg**  ([2.58, 3.20]e-4) |
+| ... through voltage sags / phase jumps | 1.61x / 2.00x clean |
+| vs the trapezoidal solver at the same step | **1.05-1.11x its error at 53x less compute** (batch 1; 2.4x at batch 512) |
+| vs the paper's own NN, inside its trained range | **tie at half the compute**; our network alone **3.4x** more accurate |
+| error growth over 40 recurrent handovers | **2.9x**, against 6.3x for an undamped random walk. Saturates |
+| above the noise-driven error floor | **9.6% — and the same 9.6% at half the timestep** |
 
-Numbers, derivations and every superseded number are in `docs/notes.md`.
+That last row is the one worth pausing on: the operator adds **no independent error floor**.
+It reproduces its training solver to a constant relative accuracy at two different noise
+levels. Width, window length, Fourier frequency **and the timestep** are all saturated —
+halving `dt` appears to buy 1.58x, but that turned out to be the noise model shrinking with
+`dt` rather than better integration, and at fixed noise spectral density the error is flat.
+
+Robustness is measured, not assumed: grid frequency at **5x** the trained range and
+amplitude at **3x** cost under 11%, and faults deeper and longer than trained degrade
+gracefully. The one hard edge is the initial frequency error `omega_0`, and past ~40 rad/s
+it is the **PLL loop itself** that stops acquiring inside the window, not the surrogate.
+
+Every number, its caveat, and what would falsify it is in the **defence sheet** at the end
+of `docs/notes.md`, together with the numbers that are superseded and must not be quoted.
 
 ---
 
@@ -112,8 +125,11 @@ flowchart TD
 | `sweep.py` | **The CLI.** One config per process; also `--collect` to table and plot a results directory. |
 | `plot_sweeps.py` | Box + strip plots of a sweep directory, every seed shown as a dot. Use this over `sweep.py --plot` when there are many seeds — a min/max error bar lets one unlucky seed set the whole bar. |
 | `reval.py` | Re-scores existing checkpoints at a larger `n_eval`. **Never retrain because the evaluation protocol changed.** |
-| `rewindow.py` | Derives a new windowing from an existing `.npz` without re-solving, so the LHS family is preserved. Verified bit-exact. |
+| `rewindow.py` | Derives a new windowing from an existing `.npz` without re-solving, so the LHS family is preserved. **Splits and merges**; round trip verified bit-exact. |
 | `fault_split.py` | Deployed metrics split by `fault_kind` (clean / sag / phase jump). A mixed number is comparable to nothing. |
+| `ood_test.py` | The out-of-distribution ladder — pushes one axis at a time past the training box, with every scenario sharing one uniform draw and one noise realisation so *only* the range differs. Plots every timestep family on one absolute axis. |
+| `lockin_range.py` | The SRF-PLL's own acquisition limit: cycle slips and lock time vs initial frequency error. **No network involved** — this is the reference solver alone, and it is what explains the single edge in the OOD ladder. |
+| `dt_convergence.py` | Whether finer sampling buys accuracy. Solver only. Separates integration error (negligible — 5 orders below) from sensor noise, and shows the apparent `dt` gain is the noise model shrinking rather than better integration. |
 | `speed_benchmark.py` | Cost and accuracy against the paper's code: their whole control block, their NN alone, their NN driven by our voltage, our solver at several steps, and us — all against one fine-grid reference. |
 | `envelope_figure.py` | The single accuracy-vs-cost figure (`graphs/12_head_to_head.png`), restricted to the range their released network was trained on. |
 | `pll_plots.py` | All report figures 01-06 in one run. |
@@ -210,7 +226,10 @@ python src/plot_sweeps.py sweeps_famX_ff --kind arms
 | `python src/reval.py sweeps_famX_ff --n_eval 150` | Re-score every checkpoint in a directory. Rewrites the JSONs in place — back the directory up first |
 | `python src/fault_split.py runs/<tag>.pth` | Deployed metrics split into clean / sag / phase jump |
 | `python src/speed_benchmark.py` | Cost table vs the paper's solvers, plus `graphs/09_accuracy_vs_step.png` |
-| `python src/envelope_figure.py runs/<tag>.pth --n_runs 32` | `graphs/12_head_to_head.png` |
+| `python src/envelope_figure.py runs/<tag>.pth --n_runs 32` | `graphs/12_head_to_head.png` — the head-to-head |
+| `python src/ood_test.py runs/<a>.pth runs/<b>.pth --n_runs 32` | `graphs/15_ood_ladder.png`. Pass checkpoints from different families to compare timesteps on one axis; `W`/`S`/`dt` are read from each checkpoint, so the datasets need not be present |
+| `python src/lockin_range.py` | `graphs/16_lockin_range.png` — the loop's acquisition limit |
+| `python src/dt_convergence.py` | `graphs/19_dt_convergence.png` — does a finer timestep buy anything? |
 | `python hpc/smoke_test.py` | One real optimiser step; checks the environment can train, not just import |
 | `python hpc/bench.py` | Optimiser-step cost on this machine, every W, every thread count |
 

@@ -1,0 +1,59 @@
+# Kp and Ki as NETWORK INPUTS, so Rahul can retune the PLL without a retrain. 16 jobs.
+#
+# HOW IT WORKS, and why the diff is small. `_integrator_step_trapezoid` computes
+# b = (dt/2)*(Kp + (dt/2)*Ki) and every downstream term broadcasts over (n_runs,), so
+# assigning per-run TENSORS to physics.Kp/Ki is enough -- PLL_Simulator needed NO change.
+# The gains are LHS-sampled per run alongside the ICs (a 7-D draw instead of 5-D), stored
+# in the npz, normalised on the training split, and APPENDED to the branch:
+#     [sin th0, cos th0, (om0-mu)/sd, Va, Vb, Vc, (Kp-mu)/sd, (Ki-mu)/sd]
+# Appended at the END so the Va/Vb/Vc offsets are untouched. The physics residual gets the
+# same per-run gains, as (B,1,1) tensors broadcasting against Vq -- without that the loss
+# would enforce the WRONG ODE for every run whose gains are not 25/300, and would fail
+# quietly rather than loudly.
+#
+# VERIFIED BEFORE SUBMITTING:
+#   * old datasets + old checkpoints reproduce bit-exactly (7.1489438415e-04 to 11 digits)
+#   * per-run gains reach the integrator: 4 runs, 4 different settling times
+#   * eq-2 residual on the TRUE trajectories is 6.4x smaller using each run's own Ki than
+#     using the fixed 300 -- i.e. the stored gains really are what generated the data
+#   * end-to-end train: branch_in 378 -> 380, tag gains a `_g` suffix
+#
+# RANGES: Kp 10-50, Ki 100-600 (theirs is 25/300). That spans wn = sqrt(Ki) = 10-24.5
+# rad/s and zeta = Kp/(2 sqrt(Ki)) = 0.20-2.50, i.e. underdamped through overdamped.
+# ASK RAHUL whether that is the range he wants -- it is wide, and a narrower one would be
+# easier to fit. Change it in config/initial_conditions.yml under `gains:`.
+#
+# FOUR ARMS = 2 omega ranges x 2 window lengths, 4 seeds each:
+#   famJ  gains + WIDE omega (+/-20)   W=40, W=20
+#   famK  gains + NARROW omega (+/-2)  W=40, W=20   <- closest to his co-simulation
+#
+# n_runs = 5000 THROUGHOUT, deliberately, and this answers the "5000 or 10000?" question
+# with a measurement instead of a guess: adding Kp and Ki makes the LHS 7-D instead of
+# 5-D, which genuinely thins the coverage, so the train/val gap in these records is the
+# evidence. famD sits at ~1.45. If these come back much worse, n=10000 is justified; if
+# they land near 1.45, it is not. Do not pre-emptively double the cost of 16 jobs.
+#
+# EXPECT IT TO BE WORSE than the fixed-gain model. It is learning a FAMILY of controllers
+# from the same budget. The number that matters is how much worse -- that is the price of
+# the flexibility, and it is what Rahul needs in order to decide.
+#
+# Generate first (each is one solve, two windowings, same LHS):
+#   .venv/bin/python hpc/generate_family.py --stem famJ --W 20 40 --n_runs 5000 --gains
+#   .venv/bin/python hpc/generate_family.py --stem famK --W 20 40 --n_runs 5000 --gains --omega_range 2
+
+--dataset famJ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famJ_W40
+--dataset famJ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famJ_W40
+--dataset famJ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famJ_W40
+--dataset famJ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famJ_W40
+--dataset famJ_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famJ_W20
+--dataset famJ_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famJ_W20
+--dataset famJ_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famJ_W20
+--dataset famJ_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famJ_W20
+--dataset famK_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famK_W40
+--dataset famK_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famK_W40
+--dataset famK_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famK_W40
+--dataset famK_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famK_W40
+--dataset famK_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famK_W20
+--dataset famK_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famK_W20
+--dataset famK_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famK_W20
+--dataset famK_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famK_W20

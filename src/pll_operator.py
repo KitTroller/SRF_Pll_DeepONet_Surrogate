@@ -36,6 +36,7 @@ class Unstacked_DeepONet(nn.Module):
             self.max_freq     = cfg["max_freq"]
             self.trunk_sizes  = list(cfg["trunk_sizes"])
             self.branch_sizes = list(cfg["branch_sizes"])
+            self.n_extra      = cfg.get("n_extra", 0)
         else:
             self.hidden_dim = ov.get("hidden_dim", model_config.hidden_dim)
             self.output_dim = ov.get("output_dim", model_config.output_dim)
@@ -47,7 +48,11 @@ class Unstacked_DeepONet(nn.Module):
             self.F = ov.get("F", model_config.num_fourier_feats)
             S_win = ov.get("S_win", int(self.S / self.W))
             self.trunk_sizes[0] += 2 * self.F
-            self.branch_sizes[0] += 3 * S_win
+            # n_extra: per-run scalars APPENDED to the branch (currently Kp, Ki when the
+            # dataset carries them). Appended at the END so the Va/Vb/Vc offsets, which
+            # pll_residual.vq_from_prediction parses positionally, are unchanged.
+            self.n_extra = ov.get("n_extra", 0)
+            self.branch_sizes[0] += 3 * S_win + self.n_extra
             self.trunk_sizes[-1]  = self.hidden_dim
             self.branch_sizes[-1] = self.hidden_dim * self.output_dim  # one block per head because I wanted to
             
@@ -59,7 +64,8 @@ class Unstacked_DeepONet(nn.Module):
         """Everything load_checkpoint needs. Without this, editing Windows,
         sensors, num_fourier_feats or output_dim silently invalidates every .pth."""
         return {"arch": "Unstacked_DeepONet", "hidden_dim": self.hidden_dim, "output_dim": self.output_dim,
-                "F": self.F, "max_freq": self.max_freq, "trunk_sizes": self.trunk_sizes, "branch_sizes": self.branch_sizes}    
+                "F": self.F, "max_freq": self.max_freq, "trunk_sizes": self.trunk_sizes,
+                "branch_sizes": self.branch_sizes, "n_extra": self.n_extra}    
         
     def forward(self, branch_input, trunk_input):
         batch_size, num_timesteps, _ = trunk_input.shape
@@ -75,18 +81,23 @@ class Unstacked_DeepONet(nn.Module):
 
 class Single_PINN(nn.Module):
     """Used as a benchmark"""
-    def __init__(self, model_config=model_config, cfg=None):
+    def __init__(self, model_config=model_config, cfg=None, ov=None):
         super().__init__()
+        ov = ov or {}
         if cfg is not None:
             self.pinn_sizes = list(cfg["pinn_sizes"])
             self.output_dim, self.F, self.max_freq = cfg["output_dim"], cfg["F"], cfg["max_freq"]
         else:
-            self.output_dim = model_config.output_dim
-            self.F          = model_config.num_fourier_feats
-            self.max_freq   = model_config.max_fourier_feat_frequency
+            # MATCHED F / max_freq / S_win -- otherwise it would silently compare a Fourier-featured operator against a featureless MLP and prove nothing.
+            self.output_dim = ov.get("output_dim", model_config.output_dim)
+            self.F          = ov.get("F", model_config.num_fourier_feats)
+            self.max_freq   = ov.get("max_freq", model_config.max_fourier_feat_frequency)
             W, S = initial_conditions_config.Windows, PLL_Constants.sensors
+            S_win = ov.get("S_win", int(S / W))
             self.pinn_sizes = list(model_config.sizes.pinn_net)
-            self.pinn_sizes[0]  = 3 + 3 * int(S / W) + 1 + 2 * self.F
+            if "hidden_dim" in ov:                       # width, for a capacity-matched arm
+                self.pinn_sizes[1:-1] = [ov["hidden_dim"]] * (len(self.pinn_sizes) - 2)
+            self.pinn_sizes[0]  = 3 + 3 * S_win + 1 + 2 * self.F
             self.pinn_sizes[-1] = self.output_dim
         self.pinn_mlp = MLP(self.pinn_sizes)
     

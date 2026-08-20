@@ -1,0 +1,32 @@
+# famE at W=40 -- separates "halved dt" from "halved window". 4 jobs.
+#
+# F48 found that dt = 50 us beats dt = 100 us by 1.58x against true physics. But famE is
+# W=80, S=125: it halved dt AND halved the window length (12.5 ms -> 6.25 ms) at the same
+# time. Two of its results cannot be attributed:
+#   * the 1.58x overall gain -- dt, or fewer samples per handover?
+#   * the 6x gain on `jump BIG` -- finer sampling of the step edge, or a shorter window
+#     containing less of the discontinuity? (Only this one improved beyond the baseline
+#     1.58x, so it is the suspicious one.)
+#
+# famE_W40 (S=250) keeps dt = 50 us and puts the window back to 12.5 ms and the handover
+# count back to 40 -- identical to famD in every respect except the sampling rate. Three
+# points then bracket it cleanly:
+#     famD  W=40  S=125  dt=100us   12.5 ms window, 40 handovers
+#     famE  W=40  S=250  dt= 50us   12.5 ms window, 40 handovers   <- this run
+#     famE  W=80  S=125  dt= 50us    6.25 ms window, 80 handovers
+# famD -> famE_W40 isolates dt. famE_W40 -> famE_W80 isolates window length.
+#
+# BEFORE SUBMITTING, derive the dataset on the cluster (no new generate, no new LHS):
+#     python src/rewindow.py famE_W80.npz --W 40
+# rewindow now merges as well as splits; the round trip W10 -> W20 -> W10 was verified
+# bit-exact. Because it is derived rather than regenerated, famE_W40 and famE_W80 share
+# one LHS draw and one ODE solve, so the comparison varies only the windowing.
+#
+# NOTE the branch grows: 3 + 3*250 = 753 inputs vs 378. ~2x the branch parameters, and
+# the trunk is evaluated at 250 points instead of 125, so expect roughly 2x the step time
+# -- same as famE_W80, since both emit 10000 samples per run either way.
+
+--dataset famE_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famE_W40
+--dataset famE_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famE_W40
+--dataset famE_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famE_W40
+--dataset famE_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famE_W40

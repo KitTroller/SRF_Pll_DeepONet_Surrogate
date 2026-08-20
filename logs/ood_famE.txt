@@ -1,0 +1,27 @@
+OOD ladder  |  32 runs x 0.5 s, W=80 S=125 dt=50 us, reference = 12.5 us trapezoid
+
+  scenario                       ours .3_s0sp0 ours .3_s1sp0   solver@dt  ours/ctrl  turns off
+  in-distribution (control)          6.446e-04     7.047e-04   5.882e-04       1.00       0/32
+  freq offset x2  (+/-0.4 Hz)        6.621e-04     7.131e-04   5.863e-04       1.03       0/32
+  freq offset x5  (+/-1.0 Hz)        6.793e-04     7.645e-04   5.835e-04       1.05       0/32
+  amp offset x3   (+/-0.15 pu)       6.689e-04     7.545e-04   5.852e-04       1.04       0/32
+  omega_0 x2      (+/-40 rad/s)      5.036e-02     3.622e-02   6.101e-04      78.13       0/32
+  omega_0 x4      (+/-80 rad/s)      5.711e+00     5.699e+00   7.060e-03    8859.31      10/32
+  sag DEEP        (0.1-0.5 pu)       1.085e-03     1.583e-03   6.513e-04       1.68       0/32
+  sag LONG        (0.1-0.3 s)        8.280e-04     8.773e-04   6.496e-04       1.28       0/32
+  jump BIG        (+/-120 deg)       1.152e-03     1.851e-03   6.078e-04       1.79       0/32
+  sag trained     (0.5-0.95 pu)      7.042e-04     8.108e-04   6.040e-04       1.09       0/32
+  jump trained    (+/-60 deg)        6.968e-04     8.852e-04   5.900e-04       1.08       0/32
+
+-> /Users/andreasodontopoulos/Desktop/DTU/Summer_Internship_2026/PLL_Attempt/graphs/18_ood_famE_dt50.png
+
+turns off  = runs whose FINAL error is a whole multiple of 2*pi away, i.e. the
+             surrogate counted cycle slips differently from the reference. That
+             is a discrete failure worth 2*pi each, not a loss of precision.
+ours/ctrl  = degradation of the surrogate vs its in-distribution control
+solv/ctrl  = how much harder the scenario is to INTEGRATE at all -- the part
+             that is physics, not extrapolation
+ours/solv  = the surrogate's excess over the floor at its own step. This is
+             the number that isolates extrapolation: if it stays near the
+             control's value the operator is still doing its job, whatever
+             happened to the absolute error.

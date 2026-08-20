@@ -1,0 +1,41 @@
+# The comb test: is it the LOW end of the Fourier comb, or the TOP? 3 arms x 4 = 12 jobs.
+#
+# This is the experiment that closes F19/F20, open since Stage B.
+#
+# `build_trunk_input` places features at w_k = max_freq * k / F. Every sweep so far varied
+# `max_freq` at fixed F=4, which moves the top AND the bottom of the comb together -- so
+# none of them measured one variable. Sorted by `max_freq / F` the old results are cleanly
+# unimodal with an optimum at 126-157 rad/s, but "why" is not established: the DFT shows
+# there is NO power at 503, and mf=126 (all four features inside the power band) is the
+# WORST arm ever tested. Putting features where the power is makes things worse.
+#
+# These three combs share a lowest feature of 126 AND a spacing of 126. They differ ONLY
+# in how far up the comb runs:
+#     mf= 251  F=2  -> {126, 251}
+#     mf= 503  F=4  -> {126, 251, 377, 503}          <- the incumbent, free (16 seeds)
+#     mf=1006  F=8  -> {126, 251, ..., 1006}
+#
+#   TIE      -> the low end / spacing is what matters; the top is irrelevant, and the
+#               mechanism is basis conditioning (closely spaced sinusoids are nearly
+#               collinear over a 12.5 ms window, so a dense comb acts like one feature).
+#   DIFFER   -> the top of the comb matters after all, and `max_freq` was the right knob
+#               for the wrong reason.
+#
+# Either outcome closes the question. It is also the cheapest decisive experiment left.
+#
+# The mf=503 F=4 arm is NOT here -- identical config to the sweeps_famB_ff mf503 arm, so
+# copy rather than retrain (retraining would overwrite the checkpoint 16 records point at):
+#   for s in 0 1 2 3; do cp Hyperparameter_sweep/sweeps_famB_ff/famB_W40_*mf503*_s${s}sp0.json \
+#                          Hyperparameter_sweep/sweeps_famB_comb/; done
+#
+# Collect with:  python src/plot_sweeps.py sweeps_famB_comb --kind arms
+# (it keys on (F, max_freq), so the three combs come out as three boxes -- correct here.)
+
+--dataset famB_W40.npz --F 2 --max_freq 251 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_comb
+--dataset famB_W40.npz --F 2 --max_freq 251 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_comb
+--dataset famB_W40.npz --F 2 --max_freq 251 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_comb
+--dataset famB_W40.npz --F 2 --max_freq 251 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_comb
+--dataset famB_W40.npz --F 8 --max_freq 1006 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_comb
+--dataset famB_W40.npz --F 8 --max_freq 1006 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_comb
+--dataset famB_W40.npz --F 8 --max_freq 1006 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_comb
+--dataset famB_W40.npz --F 8 --max_freq 1006 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_comb

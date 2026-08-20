@@ -1,0 +1,68 @@
+# Models tailored to the co-simulation, after Rahul's first closed-loop test. 12 jobs.
+#
+# WHAT HIS TEST SHOWED. The surrogate runs free inside their EMT solver (his Newton-
+# Raphson solves the coupled system for Va,Vb,Vc, then feeds those plus OUR theta and
+# omega back in) and the loop stays stable: theta agrees to ~1e-3 rad, currents to 0.2%,
+# d_i_d/d_i_q to 5e-5. That closes the "not a drop-in EMT component" limitation.
+#
+# WHAT IT ALSO SHOWED, and this is the reason for these runs. His omega spans only
+# [-0.15, +0.10] rad/s. Our training range for omega_pll is +/-20, and measured on famD:
+#
+#     |omega0| < 0.15  ->   6.8% of our 200 000 windows
+#     |omega0| < 1.0   ->  43.7%
+#     even at window 39 (settled): median |omega0| = 0.66, only 11.4% below 0.15
+#
+# So ~93% of the training data is in a regime his system never enters. Worse, the branch
+# receives (omega0 - mu)/sd with sd ~ 5.3, so his omega ~0.1 normalises to 0.019: the
+# omega0 channel is pinned near zero for his whole simulation and cannot resolve 0.05
+# from 0.10. That is a concrete mechanism for why omega is the visibly weak output in his
+# plot while theta is fine (theta rides sin/cos(theta0), which has no such problem).
+#
+# TWO ARMS, and they answer different questions:
+#
+#   famI_W20   WIDE omega (+/-20), W=20.  Rahul asked for W=20: half the network calls
+#              per simulated second, which is a real speed lever because we are
+#              overhead-bound (F25). Measured price from the W sweep: ~2.3x deployed
+#              error, ~3.4x per-window.
+#              NOT derived from famD: famD was generated on the LAPTOP (all six runs are
+#              device=mps) and its 962 MB npz is not on the cluster. Rather than upload
+#              it, famI is a fresh wide family generated here. Different LHS draw, same
+#              configuration, faults included (config has disturbances enabled).
+#                  python hpc/generate_family.py --stem famI --W 20 --n_runs 5000
+#              Only W=20 is generated: if the matched W=40 arm is ever wanted, derive it
+#              with `rewindow famI_W20.npz --W 40` (a SPLIT, bit-exact, same family) --
+#              no second generate and no risk of a mismatched LHS.
+#
+#   famH       NARROW omega (+/-2), W=40 and W=20. The specialist for warm co-simulation.
+#              PREDICTION, pre-registered: theta improves modestly, omega improves a LOT,
+#              because sd drops from ~5.3 to ~0.5 and the omega0 channel starts carrying
+#              information. If omega does NOT improve, the normalisation story is wrong
+#              and the weak omega is something else. Generate first:
+#                  python hpc/generate_family.py --stem famH --W 20 40 --n_runs 5000 --omega_range 2
+#
+# WHAT IS DELIBERATELY *NOT* NARROWED: frequency_offset stays +/-0.2 Hz. A PLL on a
+# 50.2 Hz grid settles to omega = 2*pi*0.2 = 1.26 rad/s -- that is physics, not a
+# modelling choice, and Rahul's omega sits near zero only because his grid is exactly
+# nominal. Narrowing it would make the model worse on real grids to match one test.
+#
+# NOT A REPLACEMENT. famD stays the wide-envelope model that covers acquisition and is
+# what makes us 5.3x more robust than the paper's NN outside its range (F30/F38). This is
+# a second model with an honest split: wide for acquisition studies, narrow for warm
+# co-simulation. Two models with stated domains beat one compromise.
+#
+# Hyperparameters are the settled ones throughout: F=4, mf=503, w_phys=0.3, hidden 64,
+# dt=100 us (5000 sensors) to match Rahul's step -- CONFIRM that with him before trusting
+# these; their solver defaults to sim_step = 50 us.
+
+--dataset famI_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famI_W20
+--dataset famI_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famI_W20
+--dataset famI_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famI_W20
+--dataset famI_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famI_W20
+--dataset famH_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famH_W40
+--dataset famH_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famH_W40
+--dataset famH_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famH_W40
+--dataset famH_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famH_W40
+--dataset famH_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famH_W20
+--dataset famH_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famH_W20
+--dataset famH_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famH_W20
+--dataset famH_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famH_W20

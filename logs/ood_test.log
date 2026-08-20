@@ -1,0 +1,49 @@
+=== famD seed loop finished Thu Aug 20 04:55:02 CEST 2026; starting OOD ladder ===
+
+### checkpoint seed 0
+OOD ladder  |  32 runs x 0.5 s, W=40 S=125 dt=100 us, reference = 12.5 us trapezoid
+
+  scenario                        ours [rad]   solver@dt  ours/ctrl  solv/ctrl  ours/solv
+  in-distribution (control)        1.012e-03   9.062e-04       1.00       1.00       1.12
+  freq offset x2  (+/-0.4 Hz)      1.103e-03   9.995e-04       1.09       1.10       1.10
+  freq offset x5  (+/-1.0 Hz)      1.058e-03   9.565e-04       1.05       1.06       1.11
+  amp offset x3   (+/-0.15 pu)     1.067e-03   9.656e-04       1.05       1.07       1.11
+  omega_0 x2      (+/-40 rad/s)    3.653e-02   1.015e-03      36.10       1.12      36.00
+  omega_0 x4      (+/-80 rad/s)    5.703e+00   1.500e-02    5635.81      16.55     380.29
+  sag DEEP        (0.1-0.5 pu)     2.636e-03   1.051e-03       2.60       1.16       2.51
+  sag LONG        (0.1-0.3 s)      1.418e-03   1.048e-03       1.40       1.16       1.35
+  jump BIG        (+/-120 deg)     9.924e-03   1.056e-03       9.81       1.16       9.40
+  sag trained     (0.5-0.95 pu)    1.234e-03   1.041e-03       1.22       1.15       1.19
+  jump trained    (+/-60 deg)      1.393e-03   9.812e-04       1.38       1.08       1.42
+
+ours/ctrl  = degradation of the surrogate vs its in-distribution control
+solv/ctrl  = how much harder the scenario is to INTEGRATE at all -- the part
+             that is physics, not extrapolation
+ours/solv  = the surrogate's excess over the floor at its own step. This is
+             the number that isolates extrapolation: if it stays near the
+             control's value the operator is still doing its job, whatever
+             happened to the absolute error.
+
+### checkpoint seed 1
+OOD ladder  |  32 runs x 0.5 s, W=40 S=125 dt=100 us, reference = 12.5 us trapezoid
+
+  scenario                        ours [rad]   solver@dt  ours/ctrl  solv/ctrl  ours/solv
+  in-distribution (control)        1.005e-03   9.062e-04       1.00       1.00       1.11
+  freq offset x2  (+/-0.4 Hz)      1.035e-03   9.995e-04       1.03       1.10       1.04
+  freq offset x5  (+/-1.0 Hz)      1.115e-03   9.565e-04       1.11       1.06       1.17
+  amp offset x3   (+/-0.15 pu)     1.040e-03   9.656e-04       1.03       1.07       1.08
+  omega_0 x2      (+/-40 rad/s)    2.512e-02   1.015e-03      25.00       1.12      24.75
+  omega_0 x4      (+/-80 rad/s)    5.692e+00   1.500e-02    5664.27      16.55     379.50
+  sag DEEP        (0.1-0.5 pu)     2.161e-03   1.051e-03       2.15       1.16       2.06
+  sag LONG        (0.1-0.3 s)      1.155e-03   1.048e-03       1.15       1.16       1.10
+  jump BIG        (+/-120 deg)     8.612e-03   1.056e-03       8.57       1.16       8.16
+  sag trained     (0.5-0.95 pu)    1.109e-03   1.041e-03       1.10       1.15       1.07
+  jump trained    (+/-60 deg)      1.323e-03   9.812e-04       1.32       1.08       1.35
+
+ours/ctrl  = degradation of the surrogate vs its in-distribution control
+solv/ctrl  = how much harder the scenario is to INTEGRATE at all -- the part
+             that is physics, not extrapolation
+ours/solv  = the surrogate's excess over the floor at its own step. This is
+             the number that isolates extrapolation: if it stays near the
+             control's value the operator is still doing its job, whatever
+             happened to the absolute error.

@@ -1,0 +1,54 @@
+# eq-6 residual: what happens when the physics loss CAN select the solution.
+# 4 w_phys values x 4 seeds = 16 jobs.
+#
+# THE DISTINCTION. Both are the same two ODEs; they differ in where Vq comes from.
+#   eq-4 (default, what every result so far used):  Vq is READ FROM THE DATASET.
+#         res_theta = dtheta/dt - omega - Kp*Vq_data
+#         res_omega = domega/dt          - Ki*Vq_data
+#         Vq_data is a constant w.r.t. the network, so the residual is EXACTLY invariant
+#         under theta -> theta + a*t + b, omega -> omega + a. Its null space is precisely
+#         (theta0, omega0): it is pure derivative (Sobolev) supervision and structurally
+#         CANNOT say which ODE solution is the right one. That is the F13/F16 result, and
+#         it is a three-line proof, not a measurement.
+#   eq-6 (this experiment):  Vq is RECOMPUTED from our own predicted angle,
+#         Vq = park_q(Va, Vb, Vc, theta_pred). Vq now depends on theta, the invariance is
+#         broken, and the physics term starts carrying information about the solution.
+#         This is also what INFERENCE has always done (pll_infer.predict_window), so eq-6
+#         removes a train/deploy mismatch that has been there since the beginning.
+#
+# WHY IT MIGHT LOSE, and this is the interesting part: a self-consistent WRONG angle also
+# drives the eq-6 residual to zero. theta_pred locked 180 deg out gives a perfectly
+# consistent (theta, Vq) pair. eq-4 cannot be fooled that way because its Vq is ground
+# truth. So eq-6 buys solution information at the price of a new spurious minimum. Which
+# effect wins is exactly what is not known.
+#
+# A LADDER, NOT A POINT -- deliberately. eq-6 changes the CHARACTER of the physics term,
+# so its optimal weight has no reason to match eq-4's. Testing only at w_phys=0.3 would
+# invite "you compared a tuned setting against an untuned one", and rightly. These four
+# values all appear in exp7's eq-4 ladder (0.3 is the incumbent, free from sweeps_famB_ff),
+# so the result is two CURVES over the same grid, not two numbers.
+# w_phys=0 is omitted: with no physics term, eq-4 and eq-6 are the same run.
+#
+# Everything else matched to exp7: famB_W40, F=4, mf=503, split_seed 0, seeds 0-3,
+# n_eval_runs 150. The only difference from the corresponding exp7 line is `--residual eq6`.
+#
+# VERIFIED BEFORE SUBMITTING: feeding the TRUE theta deviation through
+# vq_from_prediction() reproduces the dataset's stored Vq to 6.4e-7 relative (float32
+# precision). The closure is arithmetically correct; only its effect on training is open.
+
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 0.03 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 0.03 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 0.03 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 0.03 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 0.1 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 0.1 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 0.1 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 0.1 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 1.0 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 1.0 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 1.0 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6
+--dataset famB_W40.npz --residual eq6 --F 4 --max_freq 503 --w_phys 1.0 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_eq6

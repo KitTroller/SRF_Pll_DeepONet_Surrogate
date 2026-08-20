@@ -1,0 +1,42 @@
+# Architecture ablation: is the OPERATOR doing the work, or would a plain MLP do?
+# 2 arms x 4 seeds = 8 jobs.
+#
+# `Single_PINN` has existed in pll_operator.py since the start, is listed as Stage-8
+# baseline item 7, and has NEVER BEEN TRAINED. Karampinis et al. run exactly this control
+# (their Table II: single PINN 38.67e-6 MSE vs Unstacked PI-DeepONet 26.87e-6), so
+# following that paper while omitting its own baseline is the most visible hole in the
+# architecture story. "Why an operator and not an MLP?" currently has no answer from our
+# own data -- only a cost argument and someone else's accuracy result on another
+# component.
+#
+# Matched on everything that could confound it:
+#   same dataset, same split_seed, same seeds, same epochs/patience/lr/batch
+#   same F=4 and max_freq=503  <- Single_PINN now takes the same `ov` overrides. Without
+#                                 that it would silently fall back to the YAML defaults
+#                                 (F=0, mf=100) and we would be comparing a Fourier
+#                                 operator against a featureless MLP, proving nothing.
+#   same w_phys=0.3 and same eq4 residual
+#
+# TWO PINN arms, because parameter count is the obvious rebuttal:
+#   h=64 (default)  29 122 params -- the architecture as written
+#   h=96            46 754 params -- CAPACITY MATCHED to the DeepONet's 45 696 (2.3% over)
+# If the MLP loses at both, "you starved it of parameters" is off the table.
+#
+# Cost note, and it is a real part of the result: the PINN re-consumes all 378 voltage
+# samples at EVERY one of the 125 query points, while the DeepONet's branch runs once per
+# window. 32x more multiply-adds in the input layer, 3.2x overall at W=40 -- and the gap
+# WIDENS with window length, because branch cost is constant in S. Whatever the accuracy
+# says, that asymmetry is why a whole-window operator is affordable at all.
+#
+# Control arm is free -- the deeponet at this exact config already has 16 seeds:
+#   for s in 0 1 2 3; do cp Hyperparameter_sweep/sweeps_famB_ff/famB_W40_*mf503*_s${s}sp0.json \
+#                          Hyperparameter_sweep/sweeps_famB_arch/; done
+
+--dataset famB_W40.npz --arch pinn --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_arch
+--dataset famB_W40.npz --arch pinn --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_arch
+--dataset famB_W40.npz --arch pinn --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_arch
+--dataset famB_W40.npz --arch pinn --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_arch
+--dataset famB_W40.npz --arch pinn --hidden_dim 96 --F 4 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_arch
+--dataset famB_W40.npz --arch pinn --hidden_dim 96 --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_arch
+--dataset famB_W40.npz --arch pinn --hidden_dim 96 --F 4 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_arch
+--dataset famB_W40.npz --arch pinn --hidden_dim 96 --F 4 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_arch

@@ -1,0 +1,48 @@
+# Number of Fourier features at FIXED max_freq=503 -- 3 values x 4 seeds = 12 jobs.
+#
+# Aimed straight at the F19/F20 mechanism question, which every sweep so far has been
+# unable to touch because F was pinned at 4 throughout.
+#
+# build_trunk_input lays the features at  w_k = max_freq * k / F,  k = 1..F. So F and
+# max_freq are NOT independent: changing max_freq moves the whole comb AND its spacing.
+# Every "max_freq optimum" measured so far is really an optimum over combs. Holding
+# max_freq at 503 and varying F separates the two for the first time:
+#
+#   F=1   {503}                          the top frequency ALONE
+#   F=2   {251, 503}
+#   F=4   {126, 251, 377, 503}           the current setting -- free, 16 seeds in sweeps_famB_ff
+#   F=8   {63, 126, ..., 503}            same top, half the spacing
+#
+# The discriminator:
+#   F=1 as good as F=4  ->  it is the SINGLE FREQUENCY 503 rad/s that matters, and the
+#                           mechanism question becomes "what resonates at ~80 Hz?" --
+#                           a physics question, answerable by DFT of the residual.
+#   F=1 clearly worse   ->  it is the COMB, i.e. basis richness up to 503, and "why 503"
+#                           is really "why is 503 rad/s enough bandwidth". Then F=8
+#                           says whether more resolution below 503 buys anything.
+#
+# This is the cheapest experiment in the whole project that can move F20 forward, and it
+# is orthogonal to exp3/exp4 (which vary W at fixed comb). Run all three regardless of
+# what W=50/W=100 return -- they answer different halves of the same question.
+#
+# F=4 is NOT in this list: identical config to the sweeps_famB_ff mf503 arm, so copy it
+# rather than retrain (same reason as exp7 -- retraining would overwrite the checkpoint
+# 16 existing records point at):
+#   for s in 0 1 2 3; do cp Hyperparameter_sweep/sweeps_famB_ff/famB_W40_*mf503*_s${s}sp0.json \
+#                          Hyperparameter_sweep/sweeps_famB_fcount/; done
+#
+# NOTE for the collect step: plot_sweeps --kind arms labels by (F, max_freq), so these
+# come out as four distinct boxes with mf=503 on all of them. That is the right picture.
+
+--dataset famB_W40.npz --F 1 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_fcount
+--dataset famB_W40.npz --F 1 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_fcount
+--dataset famB_W40.npz --F 1 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_fcount
+--dataset famB_W40.npz --F 1 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_fcount
+--dataset famB_W40.npz --F 2 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_fcount
+--dataset famB_W40.npz --F 2 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_fcount
+--dataset famB_W40.npz --F 2 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_fcount
+--dataset famB_W40.npz --F 2 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_fcount
+--dataset famB_W40.npz --F 8 --max_freq 503 --w_phys 0.3 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_fcount
+--dataset famB_W40.npz --F 8 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_fcount
+--dataset famB_W40.npz --F 8 --max_freq 503 --w_phys 0.3 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_fcount
+--dataset famB_W40.npz --F 8 --max_freq 503 --w_phys 0.3 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_fcount

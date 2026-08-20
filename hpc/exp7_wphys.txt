@@ -1,0 +1,62 @@
+# w_phys at n_runs=5000 WITH Fourier features -- 7 values x 4 seeds = 28 jobs.
+#
+# THE HOLE THIS CLOSES. Every w_phys number in the notes (Stage A/A'/A'', the 2.43x,
+# the "physics helps but not by satisfying the physics" reading in F13) was measured on
+# pll_dataset.npz: n_runs=1000 and F=0. Both are confounds that were controlled for
+# everywhere else in this project:
+#
+#   n_runs   F22/F23 showed n=1000 is DATA-STARVED, and that seed variance there was a
+#            scarcity artefact that vanished at n=5000. A physics term that supplies
+#            free derivative labels (F13's Sobolev reading) is exactly the kind of thing
+#            that should help MORE when data is scarce -- so the 2.43x may itself be a
+#            scarcity artefact.
+#   F        F31 showed Fourier features cut val_th 4.16x on their own. If the features
+#            already supply what the physics term was supplying, the two overlap and
+#            0.3 is no longer the right weight.
+#
+# Either outcome is a result. If 2.43x survives at n=5000 with F=4, the finding is clean
+# for the first time. If it shrinks, the physics loss was substituting for data, which
+# EXTENDS F22 rather than contradicting it -- and is the more interesting paper sentence.
+#
+# w_phys=0.3 is NOT in this list. It already exists at 16 seeds in sweeps_famB_ff with a
+# byte-identical config, and re-running it would rebuild runs/famB_W40_n5000_W40_F4_
+# mf503_wp0.3_s0sp0.pth on top of the checkpoint those 16 records point at. Copy instead:
+#   for s in 0 1 2 3; do cp Hyperparameter_sweep/sweeps_famB_ff/famB_W40_*mf503*_s${s}sp0.json \
+#                          Hyperparameter_sweep/sweeps_famB_wphys/; done
+#
+# famB, not famD: famB is the clean family, so this measures the physics term against
+# the same conditions as the original sweep, with only n and F changed. Disturbances are
+# a separate variable and F34 already says they cost nothing on clean runs.
+#
+# Values chosen to show the SHAPE, denser near the old optimum than the old sweep was:
+# 0 control, three decades of rise (0.01, 0.03, 0.1), the optimum region (0.3 free, 0.6),
+# and two past it (1.0, 3.0). The old sweep's 1e-5..1e-3 arm was flat and is not repeated.
+
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.01 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.01 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.01 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.01 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.03 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.03 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.03 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.03 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.1 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.1 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.1 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.1 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.6 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.6 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.6 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 0.6 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 1.0 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 1.0 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 1.0 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 1.0 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 3.0 --seed 0 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 3.0 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 3.0 --seed 2 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys
+--dataset famB_W40.npz --F 4 --max_freq 503 --w_phys 3.0 --seed 3 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famB_wphys

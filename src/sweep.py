@@ -174,6 +174,11 @@ if __name__ == "__main__":
     p.add_argument("--patience", type=int, default=40)
     p.add_argument("--device", default=None)
     p.add_argument("--n_eval_runs", type=int, default=20)
+    p.add_argument("--arch", choices=["deeponet", "pinn"], default="deeponet",
+                   help="pinn = Single_PINN, the plain-MLP control. Tag gets _pinn.")
+    p.add_argument("--residual", choices=["eq4", "eq6"], default="eq4",
+                   help="eq4 = stored Vq (gauge invariant, pure derivative supervision); "
+                        "eq6 = Vq recomputed from the predicted angle. Tag gets _eq6.")
     a = p.parse_args()
 
     if a.collect:
@@ -188,4 +193,4 @@ if __name__ == "__main__":
                batch_size=a.batch_size, patience=a.patience, seed=a.seed,
                split_seed=a.split_seed, F=a.F, max_freq=a.max_freq, hidden_dim=a.hidden_dim,
                device=a.device or T.DEVICE, n_eval_runs=a.n_eval_runs,
-               results_dir=a.results_dir)
+               results_dir=a.results_dir, arch=a.arch, residual=a.residual)

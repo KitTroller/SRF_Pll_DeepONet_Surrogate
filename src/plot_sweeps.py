@@ -65,6 +65,124 @@ def plot_arms(recs, out):
     fig.savefig(out, dpi=160); print(f"-> {out}")
 
 
+def _hidden_dim(r):
+    """Records predating the `params` field carry the width only in the tag."""
+    tag = r["tag"]
+    if "_h" in tag:
+        piece = tag.split("_h")[-1].split("_")[0]
+        if piece.isdigit():
+            return int(piece)
+    return 64                                  # config/DeepONet_models.yml default
+
+
+def plot_hd(recs, out):
+    """One box per hidden_dim. NOT plot_arms: that keys on (F, max_freq), which are
+    identical across a width sweep, so every width collapsed into a single box."""
+    import matplotlib.pyplot as plt
+    by = collections.defaultdict(list)
+    for r in recs:
+        by[_hidden_dim(r)].append(r)
+    keys = sorted(by)
+    groups = [by[k] for k in keys]
+    labels = [f"hidden={k}" + ("\n(default)" if k == 64 else "") for k in keys]
+
+    fig, ax = plt.subplots(1, 4, figsize=(16, 4.2))
+    for a, (key, ylab, title) in zip(ax, PANELS):
+        _draw(a, groups, labels, key, ylab, title)
+    # compounding is the whole point of this sweep -- width changed the HANDOVER, not
+    # the operator -- so state it under the axis rather than making the reader divide.
+    comp = [np.median([r["rollout_full_rms"] / r["per_window_rms"] for r in g]) for g in groups]
+    ax[3].set_xlabel("median compounding: " + "  ".join(f"{k}:{c:.1f}x" for k, c in zip(keys, comp)),
+                     fontsize=8)
+    r0 = recs[0]
+    fig.suptitle(f"Width sweep at W={r0['W']}, F={r0['F']}, mf={r0['max_freq']:g}, "
+                 f"n_runs={_nruns(recs)}  ({len(recs)} runs; every seed shown)")
+    out = _graphs(out); fig.tight_layout(); out.parent.mkdir(exist_ok=True)
+    fig.savefig(out, dpi=160); print(f"-> {out}")
+
+
+def plot_residual(recs, out):
+    """eq-4 vs eq-6 across the w_phys ladder — paired boxes at each weight.
+
+    A ladder, not a point, on purpose: eq-6 changes the CHARACTER of the physics term, so
+    testing at one weight would compare a tuned setting against an untuned one. The TREND
+    is the result -- if eq-6 degrades as the weight rises, that is the spurious minimum a
+    self-consistent WRONG angle creates, which eq-4 is structurally immune to."""
+    import matplotlib.pyplot as plt
+    by = collections.defaultdict(list)
+    for r in recs:
+        by[(r["w_phys"], r.get("residual", "eq4"))].append(r)
+    ws = sorted({k[0] for k in by})
+    kinds = sorted({k[1] for k in by})
+    cols = {"eq4": "tab:blue", "eq6": "tab:red"}
+
+    fig, ax = plt.subplots(1, 4, figsize=(16.5, 4.4))
+    for a, (key, ylab, title) in zip(ax, PANELS):
+        for j, kind in enumerate(kinds):
+            off = (j - (len(kinds) - 1) / 2) * 0.3
+            pos, data = [], []
+            for i, w in enumerate(ws):
+                g = by.get((w, kind))
+                if g:
+                    pos.append(i + 1 + off); data.append([r[key] for r in g])
+            if not data:
+                continue
+            a.boxplot(data, positions=pos, widths=0.26, showfliers=False,
+                      medianprops=dict(color=cols.get(kind, "k"), lw=2))
+            for p, vals in zip(pos, data):
+                a.scatter(p + (np.random.rand(len(vals)) - 0.5) * 0.12, vals, s=14,
+                          alpha=0.8, color=cols.get(kind, "k"), zorder=3, lw=0,
+                          label=kind if p == pos[0] and a is ax[0] else None)
+        a.set_xticks(np.arange(len(ws)) + 1)
+        a.set_xticklabels([f"{w:g}" for w in ws], fontsize=8)
+        a.set_yscale("log"); a.set_ylabel(ylab, fontsize=8)
+        a.set_xlabel("$w_{phys}$", fontsize=8)
+        a.set_title(title, fontsize=9); a.grid(alpha=0.3, axis="y", which="both")
+    ax[0].legend(fontsize=8, title="residual form")
+    fig.suptitle("eq-4 (stored $V_q$, gauge invariant) vs eq-6 ($V_q$ from the predicted "
+                 f"angle) — {len(recs)} runs, every seed shown\n"
+                 "eq-6 is never better, and degrades as the physics weight rises: the "
+                 "signature of a spurious minimum")
+    out = _graphs(out); fig.tight_layout(); out.parent.mkdir(exist_ok=True)
+    fig.savefig(out, dpi=160); print(f"-> {out}")
+
+
+def plot_wphys(recs, out):
+    """One box per w_phys at a single (W, F, max_freq). The exp7 picture.
+
+    Categorical positions, not a log x-axis: w_phys=0 has no place on a log scale and it
+    is the control the whole sweep exists to beat, so it gets column one and a divider.
+    sweep.plot_wphys draws the same data as median + min/max error bars -- at 4 seeds
+    that lets one seed set the bar, which is how F21 went wrong. Use this one."""
+    import matplotlib.pyplot as plt
+    by = collections.defaultdict(list)
+    for r in recs:
+        by[r["w_phys"]].append(r)
+    keys = sorted(by)
+    labels = [("0\n(control)" if k == 0 else f"{k:g}") for k in keys]
+    groups = [by[k] for k in keys]
+
+    fig, ax = plt.subplots(1, 4, figsize=(16, 4.2))
+    for a, (key, ylab, title) in zip(ax, PANELS):
+        _draw(a, groups, labels, key, ylab, title)
+        a.set_xlabel("$w_{phys}$", fontsize=8)
+        if len(keys) > 6:                    # decade labels collide below this width
+            a.set_xticklabels(labels, fontsize=7.5, rotation=45, ha="right")
+        if keys and keys[0] == 0:
+            a.axvline(1.5, color="k", ls=":", lw=1.0, alpha=0.6)
+        if len(groups[0]) and len(groups) > 1:      # control band across the panel
+            c = [r[key] for r in groups[0]]
+            a.axhspan(min(c), max(c), color="k", alpha=0.07, zorder=0)
+    r0 = recs[0]
+    mf = r0.get("max_freq")                  # absent in the pre-Fourier records
+    arm = f"W={r0['W']}, F={r0['F']}" + (f", mf={mf:g}" if r0["F"] and mf else "")
+    fig.suptitle(f"Physics-weight sweep at {arm}, n_runs={_nruns(recs)}  "
+                 f"({len(recs)} runs; every seed shown, red = median, "
+                 f"grey band = $w_{{phys}}=0$)")
+    out = _graphs(out); fig.tight_layout(); out.parent.mkdir(exist_ok=True)
+    fig.savefig(out, dpi=160); print(f"-> {out}")
+
+
 def plot_W(recs, out):
     """One box per W. rollout_full_rms is the only metric comparable ACROSS W --
     it is always 0.5 s of physical time because the rollout runs n = W windows.
@@ -118,7 +236,7 @@ def summary(recs, by_key):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("results_dir")
-    p.add_argument("--kind", choices=["arms", "W"], default="arms")
+    p.add_argument("--kind", choices=["arms", "W", "wphys", "hd", "residual"], default="arms")
     p.add_argument("--out", default=None)
     a = p.parse_args()
 
@@ -130,6 +248,15 @@ if __name__ == "__main__":
     if a.kind == "arms":
         summary(recs, lambda r: f"F={r['F']} mf={r['max_freq']:g}")
         plot_arms(recs, a.out or f"graphs/10_{name}_arms.png")
+    elif a.kind == "wphys":
+        summary(recs, lambda r: f"w_phys={r['w_phys']:g}")
+        plot_wphys(recs, a.out or f"graphs/14_{name}.png")
+    elif a.kind == "hd":
+        summary(recs, lambda r: f"hidden={_hidden_dim(r)}")
+        plot_hd(recs, a.out or f"graphs/17_{name}.png")
+    elif a.kind == "residual":
+        summary(recs, lambda r: f"{r.get('residual','eq4')} w={r['w_phys']:g}")
+        plot_residual(recs, a.out or f"graphs/21_{name}.png")
     else:
         summary(recs, lambda r: f"W={r['W']}")
         plot_W(recs, a.out or f"graphs/11_{name}_W.png")

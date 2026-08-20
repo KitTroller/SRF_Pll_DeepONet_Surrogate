@@ -29,7 +29,39 @@ def main():
                    help="default: data/ , the same folder save_dataset writes to")
     p.add_argument("--force", action="store_true",
                    help="overwrite existing files (they cannot be regenerated)")
+    p.add_argument("--n_runs", type=int, default=None,
+                   help="override config/initial_conditions.yml")
+    p.add_argument("--sensors", type=int, default=None,
+                   help="override config/PLL_Constants.yml. sensors/time_window IS dt, "
+                        "so --sensors 10000 over a 0.5 s window means dt = 50 us")
+    p.add_argument("--gains", action="store_true",
+                   help="sample Kp and Ki per run and store them, so the network takes "
+                        "them as INPUTS. Ranges come from config/initial_conditions.yml")
+    p.add_argument("--omega_range", type=float, default=None,
+                   help="half-range for the PLL's initial omega, default 20 rad/s. "
+                        "Rahul's co-simulation never leaves |omega| < 0.15, and only 6.8%% "
+                        "of our windows are in that band -- a narrow model is a specialist "
+                        "for warm co-simulation, not a replacement for the wide one")
     a = p.parse_args()
+
+    # Override in memory rather than editing the YAMLs. Editing them would change the
+    # defaults for every other process on this machine -- including anything already
+    # running -- and is the kind of thing that gets forgotten and silently poisons the
+    # next family. NOTE both modules call OmegaConf.load separately, so they hold
+    # DIFFERENT objects and both have to be patched.
+    if a.n_runs is not None or a.sensors is not None or a.omega_range is not None or a.gains:
+        import dataset_generator as DG
+        import PLL_Simulator as PS
+        if a.n_runs is not None:
+            DG.initial_conditions_config.n_runs = a.n_runs
+            PS.initial_conditions_config.n_runs = a.n_runs
+        if a.sensors is not None:
+            PS.pll_constants.sensors = a.sensors
+        if a.omega_range is not None:
+            # only Dataset_Creator reads `ranges`; PLL_Simulator never does.
+            DG.initial_conditions_config.ranges.omega_pll = [-a.omega_range, a.omega_range]
+        if a.gains:
+            DG.initial_conditions_config.gains.enabled = True
 
     # The guard MUST test the path save_dataset actually writes to. After the src/data
     # reorg, `save_dataset` resolves a bare name through paths.data() into data/, so a
