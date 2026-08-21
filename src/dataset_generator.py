@@ -14,7 +14,13 @@ initial_conditions_config = OmegaConf.load(CONFIG_DIR / "initial_conditions.yml"
 
 class Dataset_Creator():
     
-    def __init__(self, initial_conditions_config=initial_conditions_config):
+    def __init__(self, initial_conditions_config=initial_conditions_config, seed=None):
+        # seed=None reproduces the historical behaviour EXACTLY (scipy treats seed=None as
+        # "draw fresh entropy"), so every dataset made before this existed is unaffected.
+        # With a seed, ONE numpy Generator feeds every LatinHypercube call in order, so the
+        # IC draw, the fault draw and the gain draw are deterministic but not correlated.
+        self.seed = seed
+        self._rng = np.random.default_rng(seed) if seed is not None else None
         self.init_cond = initial_conditions_config
         self.n_runs = initial_conditions_config.n_runs
         self.pll_simulator = PLLSimulator()
@@ -27,7 +33,7 @@ class Dataset_Creator():
         self.disturbances = initial_conditions_config.disturbances
         
     def _lhs(self, n, samples):
-        return LatinHypercube(d=n).random(samples)
+        return LatinHypercube(d=n, seed=self._rng).random(samples)
     def create_disturbance_space(self, seed=0):
         """Per-run fault parameters, LHS-sampled like the ICs.
 
@@ -51,7 +57,9 @@ class Dataset_Creator():
         # entirely inside the sag block perm[:n_fault//2] -- 750 of 750 val runs were
         # sags, and the model early-stopped on a sag-only validation set.
         # The offset makes the fault assignment independent of any plausible split_seed.
-        g = torch.Generator().manual_seed(seed + 987_654_321)  
+        # self.seed when the family is seeded, else the historical hardcoded 0 -- so a
+        # different --lhs_seed gives a genuinely different family, assignment included.
+        g = torch.Generator().manual_seed((self.seed if self.seed is not None else seed) + 987_654_321)  
         n_fault = int(round(cfg.fraction * n))
         order = torch.randperm(n, generator=g)
         sag_idx, jump_idx = order[:n_fault // 2], order[n_fault // 2:n_fault]
@@ -111,6 +119,12 @@ class Dataset_Creator():
             samples[:, 3] = samples[:, 0] + offset
             samples[:, 3] = (samples[:, 3] + np.pi) % (2 * np.pi) - np.pi # wrapps thetapll init to -pi, pi again
         return torch.Tensor(samples)
+
+    def _seed_torch(self):
+        """`_grid_phases` draws its sensor noise and harmonic amplitudes with torch.rand,
+        so seeding scipy alone would still give a different waveform every run."""
+        if self.seed is not None:
+            torch.manual_seed(self.seed + 20_260_821)
 
     def solve_ODEs(self, init_conditions, disturbances=None, gains=None):
         """Takes in (n_runs,5) different initial conditions and uses the physics engine to produce a dictionary for all the variables in a 1s time window each of shape (n_runs,N) where N is the number of sensors/samples"""
@@ -191,6 +205,7 @@ class Dataset_Creator():
             "fault_kind_values": {"0": "none", "1": "sag", "2": "phase_jump"},
             "disturbances": OmegaConf.to_container(self.init_cond.get("disturbances", {}), resolve=True),
             "gains": OmegaConf.to_container(self.init_cond.get("gains", {}), resolve=True),
+            "lhs_seed": self.seed,        # None = pre-2026-08-21, UNREPRODUCIBLE
         }
 
     def save_dataset(self, records, meta, path="pll_dataset.npz"):
@@ -213,6 +228,17 @@ class Dataset_Creator():
         meta = json.loads(z["meta_json"].item())
         data = {k: (torch.from_numpy(z[k]) if as_torch else z[k])
                 for k in z.files if k != "meta_json"}
+        if meta.get("slim"):
+            # Vd/Vq/Valpha/Vbeta were dropped at save time because they are exact
+            # functions of what remains -- rebuild them so a slim file is a drop-in.
+            # float64 for the reconstruction, then back to the stored float32 layout.
+            ph = PhysicsEquations()
+            Va, Vb, Vc = (data[k].double() for k in ("Va", "Vb", "Vc"))
+            th = data["theta_pll"].double()
+            Vd, Vq = ph.park_dqTransform(Va, Vb, Vc, th)
+            Valpha, Vbeta = ph.clarke_alphaBetaTransform(Va, Vb, Vc)
+            for k, v in zip(("Vd", "Vq", "Valpha", "Vbeta"), (Vd, Vq, Valpha, Vbeta)):
+                data[k] = v.float() if as_torch else v.float().numpy()
         return data, meta
 
     def check_continuity(self, windowed, raw, run_idx=0):
@@ -226,6 +252,7 @@ class Dataset_Creator():
         init_conditions = self.create_initial_condition_space()
         disturbance, kind = self.create_disturbance_space()
         gains = self.create_gain_space()
+        self._seed_torch()
         raw = self.solve_ODEs(init_conditions, disturbance, gains)
         windowed = {k: v.unfold(1, self.S, self.S).reshape(-1, self.S) for k, v in raw.items()}
         self.check_continuity(windowed, raw)
@@ -241,6 +268,7 @@ class Dataset_Creator():
         gains = self.create_gain_space()
         print(f"initial conditions: {tuple(init_conditions.shape)}"
               + (f"  gains: {tuple(gains.shape)}" if gains is not None else "  gains: fixed"))
+        self._seed_torch()
         raw = self.solve_ODEs(init_conditions, disturbance, gains)        # (n_runs, N); W plays no part
         
         for W in W_list:

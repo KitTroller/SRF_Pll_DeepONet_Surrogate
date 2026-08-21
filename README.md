@@ -127,6 +127,86 @@ A setting is only justified if the alternatives were measured. These were.
 | **a 50 µs EMT step** | `--sensors 10000` | 2× compute, 2× data, **no accuracy change** | do it for step-matching, never for accuracy |
 | **unbalanced faults** | not implemented | — | this is the largest remaining gap; negative sequence lands at 2ω = 628 rad/s in dq, which an SRF-PLL structurally cannot reject |
 
+### Reproducing the datasets — read this before trusting a number
+
+The `.npz` files are git-ignored (~1–4 GB each) and are not distributed. **Everything else
+you need to rebuild them is here — but with one honest caveat that splits the work in
+two.**
+
+> **Families generated on or before 2026-08-20 are NOT reproducible.**
+> `create_initial_condition_space` called `scipy.stats.qmc.LatinHypercube` with **no seed**,
+> and `_grid_phases` drew its sensor noise from an unseeded `torch.rand`. Re-running the
+> commands below gives a *statistically equivalent* family, not the same one — different
+> LHS draw, different noise realisation. Every number measured on those families is
+> therefore reproducible **in distribution**, not bit-for-bit. This is why
+> `generate_family.py` refuses to overwrite an existing `.npz`.
+>
+> **Fixed 2026-08-21:** `--lhs_seed` now seeds the Latin Hypercube, the sensor noise, the
+> harmonics, the fault draw and the gain draw from one stream. Verified: the same seed
+> gives a **bit-identical** file across all 20 arrays; a different seed changes 17 of 20
+> (the other three — `t_local`, `run_id`, `segment_id` — are deterministic by
+> construction). `meta["lhs_seed"]` records it, and is `None` for the older families.
+> **Always pass `--lhs_seed` from now on.**
+
+**What agreement to expect, and what would actually be a problem.** Regenerating gives a
+*different draw from the same distribution*, so the right question is not "do the digits
+match" but "does it land inside the reported seed band". Every headline number here is a
+band over 4-16 seeds precisely so that question can be asked:
+
+| claim | band to land inside | seeds |
+|---|---|---|
+| deployed theta RMS, clean runs (famD) | [2.58, 3.20]e-4 rad | 6 |
+| Fourier features vs none, `val_th` (famB) | F=0 [3.00, 4.86]e-8 vs mf503 [0.77, 1.04]e-8 | 16 each |
+| `w_phys` 0 vs 0.3, `val_th` | [3.72, 5.07]e-8 vs [8.08, 9.14]e-9 | 4 each |
+| W=40 vs W=20 deployed | 4.58e-4 vs 8.59e-4 | 4-6 |
+| DeepONet vs plain MLP, `per_window_rms` | [8.4, 9.6]e-5 vs [8.4, 10.4]e-4 | 4 each |
+
+A rerun that lands inside these has reproduced the work. One that lands outside is a real
+disagreement worth chasing — and the seed spreads are wide enough (up to 1.6x on the
+deployed metric, F24) that a single seed proves nothing either way. **Do not rerun 200
+seeds**; 3-4 per arm is enough to check a band, which is why the bands are published
+instead of point estimates.
+
+**The families, and the exact command for each.** All use `config/` as committed except
+where a flag overrides it.
+
+| family | n_runs | sensors / dt | ω₀ | gains | faults | command |
+|---|---|---|---|---|---|---|
+| `famB_W{10,20,40,100}` | 5000 | 5000 / 100 µs | ±20 | no | **no** | `generate_family.py --stem famB --W 10 20 40 100` |
+| `famD_W{40,100}` | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famD --W 40 100` |
+| `famE_W80` | 5000 | **10000 / 50 µs** | ±20 | no | yes | `generate_family.py --stem famE --W 80 --sensors 10000` |
+| `famE_W40` | 5000 | 10000 / 50 µs | ±20 | no | yes | `rewindow.py famE_W80.npz --W 40` *(derived, bit-exact)* |
+| `famG_W40` | **10000** | 10000 / 50 µs | ±20 | no | yes | `generate_family.py --stem famG --W 40 --n_runs 10000 --sensors 10000` |
+| `famH_W{20,40}` | 5000 | 5000 / 100 µs | **±2** | no | yes | `generate_family.py --stem famH --W 20 40 --n_runs 5000 --omega_range 2` |
+| `famI_W20` | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famI --W 20 --n_runs 5000` |
+| `famJ_W{20,40}` | 5000 | 5000 / 100 µs | ±20 | **yes** | yes | `generate_family.py --stem famJ --W 20 40 --n_runs 5000 --gains` |
+| `famK_W{20,40}` | 5000 | 5000 / 100 µs | **±2** | **yes** | yes | `generate_family.py --stem famK --W 20 40 --n_runs 5000 --gains --omega_range 2` |
+
+`famB` predates the disturbance work, so it has no faults — that is why it is the
+*hyperparameter* workhorse and `famD` is the deployed model. Gain ranges live under
+`gains:` in `config/initial_conditions.yml` (Kp 10–50, Ki 100–600).
+
+**Training IS fully reproducible.** Every model's own seed, split seed and hyperparameters
+are in its filename and in its JSON record, and `--split_seed 0` is fixed everywhere so
+only `--seed` varies:
+
+```
+<dataset stem>_n<n_runs>_W<W>_F<F>_mf<max_freq>_wp<w_phys>_s<seed>sp<split_seed>[_h<hidden>][_pinn][_eq6][_g]
+```
+
+So `famD_W40_n5000_W40_F4_mf503_wp0.3_s1sp0.pth` is famD_W40, n=5000, W=40, F=4,
+max_freq=503, w_phys=0.3, seed 1, split_seed 0 — retrain it with:
+
+```bash
+python src/sweep.py --dataset famD_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --seed 1 --split_seed 0 --epochs 800 --patience 40 --n_eval_runs 150 --results_dir sweeps_famD
+```
+
+Every `hpc/exp*.txt` is the literal argument list for its array, one line per job, so any
+experiment in this repo re-runs from its config file unchanged. **The one thing that will
+differ is the dataset**, for the reason above — and on a machine with a different device,
+because `batches()` shuffles with `torch.randperm(n, device=device)`, so CPU, MPS and CUDA
+draw different minibatch orders from the same seed.
+
 ### Which figure settles which decision
 
 | figure | decides |

@@ -34,6 +34,10 @@ def main():
     p.add_argument("--sensors", type=int, default=None,
                    help="override config/PLL_Constants.yml. sensors/time_window IS dt, "
                         "so --sensors 10000 over a 0.5 s window means dt = 50 us")
+    p.add_argument("--lhs_seed", type=int, default=None,
+                   help="make the dataset REPRODUCIBLE. Without it the Latin-Hypercube draw "
+                        "and the sensor noise are unseeded and the file can never be "
+                        "regenerated -- which is why the clobber guard exists. Always pass it.")
     p.add_argument("--gains", action="store_true",
                    help="sample Kp and Ki per run and store them, so the network takes "
                         "them as INPUTS. Ranges come from config/initial_conditions.yml")
@@ -76,10 +80,12 @@ def main():
                  "every sweep record that names them\nwould become un-revaluable. "
                  "Pick a different --stem, or pass --force if you really mean it.")
 
-    dc = Dataset_Creator()
+    dc = Dataset_Creator(seed=a.lhs_seed)
     sim = dc.pll_simulator
     print(f"n_runs={dc.n_runs}  N={sim.N}  dt={sim.dt}  "
-          f"time_window={sim.physics.time_window}s")
+          f"time_window={sim.physics.time_window}s  lhs_seed={a.lhs_seed}")
+    if a.lhs_seed is None:
+        print("  !! no --lhs_seed: this dataset will NOT be reproducible")
     for W in a.W:
         assert sim.N % W == 0, f"W={W} does not divide N={sim.N}"
     print(f"writing: {', '.join(fmt.format(W=W) for W in a.W)}")
