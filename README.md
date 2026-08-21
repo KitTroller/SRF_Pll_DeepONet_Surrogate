@@ -94,6 +94,57 @@ Each row is a decision that was measured, not assumed. `F##` are findings in
 | **`n_eval_runs`** | **150** | at 20, subsampling noise (~11% s.e.) exceeds the effects being measured | ~5 s per checkpoint. `reval.py` re-scores without retraining | **F21** |
 | optimiser | SOAP, `lr 3e-3`, `wd 0.01`, batch 512, patience 40 | inherited from Karampinis et al. and never a bottleneck | `patience` also drives the LR schedule (`patience//3`) — raising it **slows convergence**, which is what stalled the n=10000 run | **F55** |
 
+### Tried and rejected — the other half of the table
+
+A setting is only justified if the alternatives were measured. These were.
+
+| tried | result | why it lost | evidence |
+|---|---|---|---|
+| **`ω` derived from `dθ/dt − Kp·Vq`** (one output head) | **10×** worse deployed | differentiating the network pushes raw sensor noise through `Kp`; ω is pinned to a floor the *formulation* creates, not the physics | **F10** |
+| **eq-6 residual** — `Vq` recomputed from the predicted angle | never better, up to **8×** worse | breaks gauge invariance, so a *self-consistent wrong angle* zeroes the residual. Degrades monotonically with `w_phys` — the spurious minimum, exactly as predicted | **F53** · `graphs/21` |
+| **Plain MLP** (`Single_PINN`), matched hyperparameters, matched *and* higher capacity | **~10×** worse (error), **3.3×** slower/epoch | re-consumes all 378 voltage samples at each of 125 query points; the operator factorisation consumes them once | **F52** |
+| **`w_phys = 0`** (no physics term) | **1.88×** worse deployed, 5.2× on `val_th` | loses the free derivative labels the ODE supplies | **F54** · `graphs/14` |
+| **`w_phys ≥ 1`** | up to **1.8×** worse deployed | starves the data term, which is the only thing pinning `(θ₀, ω₀)` — and the handover passes *absolute* state forward | **F54** |
+| **`hidden_dim = 32`** | operator unchanged, **compounding 5.9 vs 3.4** | too narrow to keep the recurrence stable, though one-window accuracy is fine | **F46** · `graphs/17` |
+| **`hidden_dim = 128`** | indistinguishable from 64 | capacity was never the constraint | **F46** |
+| **`max_freq` = 100, 126, 251, 314, 754, 1006, 1257, 1885, 3770** | all worse than 503 at `F=4` | the real parameter is `max_freq/F`; these move the comb's *bottom* away from 126 rad/s | **F20, F44, F56** · `graphs/10` |
+| **`F = 1`** (single frequency 503) | clearly worse | it was never one frequency — a comb is needed, and F=1 puts nothing near 126 | **F50** |
+| **`W` = 10, 20** | **10.6×**, **1.88×** worse | fewer, longer windows ask more of a single forward pass. W=20 is still a *usable trade* for half the calls | **F45, F58** · `graphs/11` |
+| **`W` = 50, 100** | tied with 40 | shorter windows cost more calls and buy nothing | **F32, F45** |
+| **`dt = 50 µs`** (10000 sensors) | **no gain** at fixed noise PSD | the apparent 1.58× was the noise model shrinking with `dt`; trapezoid truncation is 5 orders below the sensor noise | **F49** · `graphs/19` |
+| **`n_runs = 10000`** | no measurable gain, at 2× data *and* 2× epochs | data saturates near 5000; the train/val gap sits at ~1.45 either way | **F55** |
+| **narrow `ω₀` range (±2)** | overlaps wide on a common test set | the earlier 1.4× advantage was a validation-set-difficulty artefact — the two splits are not equally hard | **F59 retracted, F61** |
+| **`Kp`/`Ki` as inputs** | **~2.5×** worse at 25/300 | *not* rejected — it is offered as a variant. It is the only option if the gains ever move, since a fixed model is **38×** worse one grid step away | **F57, F60** · `graphs/rahul/03, 06` |
+
+### If you want something different — the levers, in order of usefulness
+
+| you want | change | you pay | you do NOT get it from |
+|---|---|---|---|
+| **half the compute** | `W` 40 → 20 (25 ms windows) | 1.88× error; 19.4 → 10.9 ms/sim-s | `hidden_dim` — inference is overhead-bound, so 100× the parameters costs the same per sample (**F25**) |
+| **retunable `Kp`, `Ki`** | `--gains` at generation | ~2.5× error at 25/300, ~5% inference time | anything else — a fixed-gain model is 38× worse at a nearby tuning |
+| **more accuracy** | *nothing on this list.* Every knob is saturated | — | `dt` (F49), `n_runs` (F55), `hidden_dim` (F46), `W` above 40 (F45), narrower `ω₀` (F61) |
+| **cold-acquisition coverage** | already have it — the wide model | nothing; it matches the narrow one in the warm regime too | — |
+| **a 50 µs EMT step** | `--sensors 10000` | 2× compute, 2× data, **no accuracy change** | do it for step-matching, never for accuracy |
+| **unbalanced faults** | not implemented | — | this is the largest remaining gap; negative sequence lands at 2ω = 628 rad/s in dq, which an SRF-PLL structurally cannot reject |
+
+### Which figure settles which decision
+
+| figure | decides |
+|---|---|
+| `01`–`06` | dataset and simulator sanity; prediction vs truth; error by window; residual budget |
+| `09` | where the error lives in time |
+| `10` | Fourier arms — `F` and `max_freq` |
+| `11` | window length `W` |
+| `12` | head-to-head vs the paper's own network |
+| `14` | physics weight `w_phys` |
+| `15` | out-of-distribution envelope, both timesteps |
+| `16` | the PLL loop's own acquisition limit — no network involved |
+| `17` | width `hidden_dim` |
+| `19` | does a finer timestep buy anything (solver only) |
+| `20` | where the signal's power actually is — the DFT behind `max_freq` |
+| `21` | eq-4 vs eq-6 residual |
+| `rahul/01`–`06` | the deliverable: model menu, θ/ω split, gain sensitivity, contenders, gain showcase |
+
 ### The three claims that need no caveat
 
 1. **The operator adds no independent error floor.** It sits a constant **9.6%** above the
