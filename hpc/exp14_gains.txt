@@ -1,5 +1,11 @@
 # Kp and Ki as NETWORK INPUTS, so Rahul can retune the PLL without a retrain. 16 jobs.
 #
+# WARNING, THE `--epochs 800` BELOW IS NOT WHAT RAN. The copy submitted on the cluster
+# had a raised cap: sweeps_famJ_W20 records show epochs_run of 1024, 1047, 1097 and 1099,
+# four different values, so all four early-stopped on patience under a cap of at least
+# 1100. Reproducing exp14 from THIS file would cap every W=20 run at 800 and get worse
+# numbers than the ones on record. Use --epochs 1200, as exp16 does on every arm.
+#
 # HOW IT WORKS, and why the diff is small. `_integrator_step_trapezoid` computes
 # b = (dt/2)*(Kp + (dt/2)*Ki) and every downstream term broadcasts over (n_runs,), so
 # assigning per-run TENSORS to physics.Kp/Ki is enough -- PLL_Simulator needed NO change.

@@ -21,10 +21,31 @@ matters: `pll_dataset*.npz` is 2 GB today and the datasets are regenerated on th
 cluster anyway):
 
 ```
-rsync -av --exclude '.venv' --exclude '*.npz' --exclude 'runs' --exclude '__pycache__' \
+rsync -avz --exclude '.venv' --exclude '*.npz' --exclude 'runs' --exclude '__pycache__' \
       ~/Desktop/DTU/Summer_Internship_2026/PLL_Attempt/ \
-      <user_id>@transfer.gbar.dtu.dk:~/PLL_Attempt/
+      <user_id>@login2.hpc.dtu.dk:~/PLL_Attempt/
 ```
+
+**`login2.hpc.dtu.dk`, not `transfer.gbar.dtu.dk`.** The transfer host is sftp-only and
+has no remote `rsync`, so it fails with `protocol error: unexpected tag 94` — which
+looks like corruption and is really "that binary does not exist there". Add `-n` for a
+dry run first. No `--delete`, so nothing on the cluster is removed.
+
+### Driving it from the laptop without logging in
+
+`ssh host 'cmd'` runs a **non-interactive** shell, which does not source the profile
+that puts LSF on `PATH`. Every `bsub`, `bjobs`, `bstat` and `getquota_*` invocation
+therefore dies with `bash: line 1: bsub: command not found`. Wrap them:
+
+```
+ssh <user_id>@login2.hpc.dtu.dk 'bash -lc "cd ~/PLL_Attempt && bsub < hpc/job_gen_nofault.sh"'
+ssh <user_id>@login2.hpc.dtu.dk 'bash -lc "cd ~/PLL_Attempt && sh hpc/submit.sh hpc/exp16_nofault_gains.txt nofault"'
+ssh <user_id>@login2.hpc.dtu.dk 'bash -lc "bjobs -w"'
+```
+
+Plain commands (`grep`, `ls`, `tail`) need no wrapper. Note also that `bjobs -A` drops
+**completed** array elements from the summary — an array that shrinks has finished, it
+has not been killed.
 
 Home is 30 GB and backed up; `/work3/<user_id>` is large and **not** backed up. One
 `famB` family at `n_runs=5000` is ~4 GB (4 files × ~1 GB), which fits in home. Check

@@ -41,6 +41,17 @@ def main():
     p.add_argument("--gains", action="store_true",
                    help="sample Kp and Ki per run and store them, so the network takes "
                         "them as INPUTS. Ranges come from config/initial_conditions.yml")
+    p.add_argument("--kp_range", type=float, nargs=2, metavar=("LO", "HI"), default=None,
+                   help="override gains.Kp. Implies --gains. Shrinking the box trades "
+                        "controller coverage for accuracy inside what is left")
+    p.add_argument("--ki_range", type=float, nargs=2, metavar=("LO", "HI"), default=None,
+                   help="override gains.Ki. Implies --gains")
+    p.add_argument("--no_faults", action="store_true",
+                   help="disable sags and phase jumps, so all n_runs are clean. The run "
+                        "budget is unchanged, so the clean regime is sampled twice as "
+                        "densely (config fraction is 0.5). The model then has NEVER seen "
+                        "a fault waveform -- fine only if the faults come from the "
+                        "co-simulation's own network solver, not from us")
     p.add_argument("--omega_range", type=float, default=None,
                    help="half-range for the PLL's initial omega, default 20 rad/s. "
                         "Rahul's co-simulation never leaves |omega| < 0.15, and only 6.8%% "
@@ -53,7 +64,9 @@ def main():
     # running -- and is the kind of thing that gets forgotten and silently poisons the
     # next family. NOTE both modules call OmegaConf.load separately, so they hold
     # DIFFERENT objects and both have to be patched.
-    if a.n_runs is not None or a.sensors is not None or a.omega_range is not None or a.gains:
+    gains = a.gains or a.kp_range is not None or a.ki_range is not None
+    if (a.n_runs is not None or a.sensors is not None or a.omega_range is not None
+            or gains or a.no_faults):
         import dataset_generator as DG
         import PLL_Simulator as PS
         if a.n_runs is not None:
@@ -64,8 +77,19 @@ def main():
         if a.omega_range is not None:
             # only Dataset_Creator reads `ranges`; PLL_Simulator never does.
             DG.initial_conditions_config.ranges.omega_pll = [-a.omega_range, a.omega_range]
-        if a.gains:
+        if gains:
             DG.initial_conditions_config.gains.enabled = True
+            if a.kp_range is not None:
+                DG.initial_conditions_config.gains.Kp = list(a.kp_range)
+            if a.ki_range is not None:
+                DG.initial_conditions_config.gains.Ki = list(a.ki_range)
+        if a.no_faults:
+            # `create_disturbance_space` returns before it touches the RNG when this is
+            # off, so two no-fault families sharing an --lhs_seed get IDENTICAL initial
+            # conditions and IDENTICAL gain u-draws -- only the affine map onto (Kp,Ki)
+            # differs. That makes a gain-box comparison PAIRED instead of two independent
+            # draws, which is most of the reason this batch can use 4 seeds and not 16.
+            DG.initial_conditions_config.disturbances.enabled = False
 
     # The guard MUST test the path save_dataset actually writes to. After the src/data
     # reorg, `save_dataset` resolves a bare name through paths.data() into data/, so a
@@ -84,6 +108,9 @@ def main():
     sim = dc.pll_simulator
     print(f"n_runs={dc.n_runs}  N={sim.N}  dt={sim.dt}  "
           f"time_window={sim.physics.time_window}s  lhs_seed={a.lhs_seed}")
+    g, d = dc.init_cond.gains, dc.init_cond.disturbances
+    print(f"  faults={'ON' if d.enabled else 'OFF'}   "
+          f"gains={'Kp %s  Ki %s' % (list(g.Kp), list(g.Ki)) if g.enabled else 'fixed'}")
     if a.lhs_seed is None:
         print("  !! no --lhs_seed: this dataset will NOT be reproducible")
     for W in a.W:

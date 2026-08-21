@@ -37,7 +37,7 @@ MODELS = [  # label, checkpoint, colour
     ("wide  fixed",  "famI_W20_n5000_W20_F4_mf503_wp0.3_s0sp0.pth",   "tab:blue"),
     ("narrow fixed", "famH_W20_n5000_W20_F4_mf503_wp0.3_s0sp0.pth",   "tab:green"),
     ("wide  GAINS",  "famJ_W20_n5000_W20_F4_mf503_wp0.3_s0sp0_g.pth", "tab:orange"),
-    ("narrow GAINS", "famK_W20_n5000_W20_F4_mf503_wp0.3_s2sp0_g.pth", "tab:red"),
+    ("narrow GAINS", "famK_W20_n5000_W20_F4_mf503_wp0.3_s0sp0_g.pth", "tab:red"),
 ]
 
 

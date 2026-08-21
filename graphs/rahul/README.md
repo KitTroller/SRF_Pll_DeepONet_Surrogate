@@ -66,6 +66,27 @@ inside, so `load_checkpoint` rebuilds them without any config file. The `.py` fi
   itself* cycle-slips and does not lock inside 0.5 s, so there is nothing to learn.
 - Grid frequency and amplitude excursions well beyond the training range cost <11%.
 - Faults deeper and longer than trained degrade gracefully (~2.6x at 0.1 pu sags).
-- Gains models: stay above **Kp ~ 18**. The underdamped corner (zeta < 0.3) is where they
-  fall apart.
+- Gains models: stay inside roughly **Kp 18-45, Ki 180-520**, and ideally Kp 25-41,
+  Ki 200-500. Your tuning (25/300) sits comfortably inside that.
+
+  It is **not** the underdamped corner that hurts, which is what you would guess. The
+  damage follows *low `Kp`* and *low `Ki`* independently of `zeta` — see
+  `03_gain_sensitivity.png`:
+
+  | | worst cell | its `zeta` |
+  |---|---|---|
+  | `Kp=10` column | 3.6e-3 to 8.7e-3 at every `Ki` | 0.20 to **0.50** |
+  | `Ki=100` row | 1.0e-3 to 6.7e-3 at every `Kp` | 0.50 to **2.50** |
+  | sweet spot `Kp` 25-41, `Ki` 200-500 | 6.2e-4 to 1.2e-3 | 0.56 to 1.45 |
+
+  `Kp=10, Ki=100` is `zeta = 0.50` — properly damped — and still 6.7e-3, the second-worst
+  cell in the box. `Kp=50, Ki=100` is `zeta = 2.50`, heavily *over*damped, and still
+  1.8e-3. So a damping-ratio rule would send you to the wrong place: it would keep the
+  `Ki=100` row, which is the worst row we measured, and discard the good high-`Ki` region.
+
+  One caveat on reading that figure: the colour is an **absolute** angle RMS. At `Ki=100`
+  the loop's natural period is 0.63 s, longer than the 0.5 s window, so those runs are
+  still in transient at the end and `|theta|` is simply larger. Part of the edge effect
+  may be "the answer is bigger here" rather than "the model is relatively worse here".
+  Either way the practical advice is the same, and your operating point is interior.
 - Balanced faults only — no negative sequence in the training data.

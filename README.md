@@ -181,10 +181,20 @@ where a flag overrides it.
 | `famI_W20` | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famI --W 20 --n_runs 5000` |
 | `famJ_W{20,40}` | 5000 | 5000 / 100 µs | ±20 | **yes** | yes | `generate_family.py --stem famJ --W 20 40 --n_runs 5000 --gains` |
 | `famK_W{20,40}` | 5000 | 5000 / 100 µs | **±2** | **yes** | yes | `generate_family.py --stem famK --W 20 40 --n_runs 5000 --gains --omega_range 2` |
+| `famL_W{20,40}` | 5000 | 5000 / 100 µs | ±20 | **yes** | **no** | `generate_family.py --stem famL --W 20 40 --n_runs 5000 --gains --no_faults --lhs_seed 11` |
+| `famM_W{20,40}` | 5000 | 5000 / 100 µs | ±20 | **yes, trimmed** | **no** | `generate_family.py --stem famM --W 20 40 --n_runs 5000 --gains --no_faults --lhs_seed 11 --kp_range 18 45 --ki_range 180 520` |
 
 `famB` predates the disturbance work, so it has no faults — that is why it is the
 *hyperparameter* workhorse and `famD` is the deployed model. Gain ranges live under
-`gains:` in `config/initial_conditions.yml` (Kp 10–50, Ki 100–600).
+`gains:` in `config/initial_conditions.yml` (Kp 10–50, Ki 100–600); `famM` overrides them
+to Kp 18–45, Ki 180–520.
+
+`famL` and `famM` are the **first bit-reproducible families** — everything above them was
+generated before `--lhs_seed` existed. They also share `--lhs_seed 11` on purpose: with
+faults off, `create_disturbance_space` returns before touching the RNG, so the two get
+identical initial conditions, identical grid waveforms and identical gain *u*-draws, and
+only the affine map onto `(Kp, Ki)` differs. That makes the gain-box comparison **paired**
+rather than two independent draws. Reuse that seed if you regenerate either one.
 
 **Training IS fully reproducible.** Every model's own seed, split seed and hyperparameters
 are in its filename and in its JSON record, and `--split_seed 0` is fixed everywhere so
@@ -340,8 +350,21 @@ git clone https://github.com/ignvenad/PINNs-in-EMT
 LHS draw and one ODE solve, sliced several ways:
 
 ```bash
-python hpc/generate_family.py --stem famX --W 10 20 40 100
+python hpc/generate_family.py --stem famX --W 10 20 40 100 --lhs_seed 11
 ```
+
+| flag | default | note |
+|---|---|---|
+| `--stem` | required | `famX` → `data/famX_W40.npz` |
+| `--W` | `10 20 40 100` | must divide `N = sensors`; one solve, several slicings |
+| `--lhs_seed` | none | **always pass it.** Seeds the LHS draw, the sensor noise, the harmonics, the fault assignment and the gain draw from one stream. Without it the family can never be regenerated |
+| `--n_runs` | from YAML | overridden in memory, so the YAML is never edited under a running process |
+| `--sensors` | from YAML | `time_window / sensors` **is** `dt`: 10000 over 0.5 s = 50 µs |
+| `--omega_range` | 20 | half-range for the PLL's initial frequency error [rad/s] |
+| `--gains` | off | sample `Kp`, `Ki` per run and store them, so the network takes them as **inputs**. Tags the model `_g` |
+| `--kp_range` / `--ki_range` | from YAML | override the gain box. Either one implies `--gains` |
+| `--no_faults` | off | all runs clean. `n_runs` is unchanged, so the clean regime is sampled twice as densely — but the model then never sees a sag or jump |
+| `--force` | off | overwrite an existing `.npz`. Think first |
 
 Use this rather than calling `generate_multi_W` directly — it refuses to overwrite an
 existing `.npz` unless you pass `--force`. To add a **new** W to a family that already
@@ -369,11 +392,17 @@ python src/sweep.py --dataset famX_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --s
 | `--seed` | 0 | network init + minibatch order |
 | `--split_seed` | 0 | train/val split — **hold this fixed, vary only `--seed`** |
 | `--n_eval_runs` | 20 | **always pass 150.** 20 produced a false positive that stood for two days |
-| `--epochs` `--lr` `--batch_size` `--patience` | 800, 3e-3, 512, 40 | |
+| `--epochs` `--lr` `--batch_size` `--patience` | 800, 3e-3, 512, 40 | **pass `--epochs 1200`.** W=20 hit the 800 default every single time; raising it dropped the apparent W=20 penalty from 2.3x to 1.88x, so a third of that "penalty" was the cap rather than the windowing. `patience` should be what ends a run |
 | `--device` | auto | do not mix devices inside one comparison |
 
 Writes `runs/<tag>.pth` and `Hyperparameter_sweep/<results_dir>/<tag>.json`. A run that
 diverges writes a record with `status != "ok"` and no checkpoint.
+
+**Nothing extra is needed to train on a gains dataset.** `sweep.py` detects the stored
+`kp`/`ki`, normalises them on the training split, appends them to the branch input (at the
+**end**, so the `Va`/`Vb`/`Vc` offsets are untouched), feeds the same per-run gains to the
+physics residual, and tags the checkpoint `_g`. At inference `predict_window` then
+**refuses** to run without `kp=` and `ki=` rather than silently assuming 25/300.
 
 ### 3. Collect and plot
 
@@ -398,6 +427,9 @@ python src/plot_sweeps.py sweeps_famX_ff --kind arms
 | `python src/ood_test.py runs/<a>.pth runs/<b>.pth --n_runs 32` | `graphs/15_ood_ladder.png`. Pass checkpoints from different families to compare timesteps on one axis; `W`/`S`/`dt` are read from each checkpoint, so the datasets need not be present |
 | `python src/lockin_range.py` | `graphs/16_lockin_range.png` — the loop's acquisition limit |
 | `python src/dt_convergence.py` | `graphs/19_dt_convergence.png` — does a finer timestep buy anything? |
+| `python src/rahul_report.py` | `graphs/rahul/01_model_menu.png` + `02_theta_omega.png` — every deliverable model's deployed error and cost, read from the sweep records |
+| `python src/rahul_contenders.py` | `graphs/rahul/04`, `05`, `06` — prediction vs truth per model, W=40 and W=20 in separate panels, plus the gain showcase. The checkpoint list is the `MODELS` table at the top of the file |
+| `python src/gain_sensitivity.py runs/<gains tag>.pth` | `graphs/rahul/03` — error across the whole `(Kp, Ki)` box, gains-model vs fixed-gain model. Its `rollout_err` is also the **common-test harness**: use it, not per-family `val_th`, whenever two families are compared |
 | `python hpc/smoke_test.py` | One real optimiser step; checks the environment can train, not just import |
 | `python hpc/bench.py` | Optimiser-step cost on this machine, every W, every thread count |
 
