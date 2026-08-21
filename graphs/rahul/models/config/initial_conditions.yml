@@ -1,0 +1,29 @@
+# 5d initial condition sampling space:
+n_runs: 5000
+pll_init_dependent_on_initial_grid_angle: true
+pll_init_angle_range_factor: 0.5 # used when flag is true
+Windows: 40
+ranges:
+  initial_grid_angle: [-3.141592653589793, 3.141592653589793] # rad
+  frequency_offset: [-0.2, 0.2] # Hz
+  amplitude_offset: [-0.05, 0.05] # pu
+  theta_pll: [-3.141592653589793, 3.141592653589793] # rad
+  omega_pll: [-20, 20] # rad/s
+
+disturbances:
+  enabled: true
+  fraction: 0.5 # percentage of runs we get a fault on
+  start: [0.05,0.40]
+  sag:
+    depth: [0.5, 0.95]  # p.u.
+    duration: [0.02, 0.10]
+  phase_jump:
+    angle_deg: [-60, 60]
+# Controller gains as inputs, not constants. Off by default, so every existing
+# dataset and checkpoint is unaffected. Bossman asked for this so he can vary the PLL
+# tuning in the co-simulation without a retrain.
+gains:
+  enabled: false
+  Kp: [10.0, 50.0]     # old config uses 25
+  Ki: [100.0, 600.0]   # old config uses 300.  wn = sqrt(Ki) -> 10 .. 24.5 rad/s
+                       # zeta = Kp/(2 sqrt(Ki)) -> 0.20 .. 2.50, i.e. under- to over-damped

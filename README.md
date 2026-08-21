@@ -72,6 +72,43 @@ of `docs/notes.md`, together with the numbers that are superseded and must not b
 
 ---
 
+## Every knob, why it is set that way, and what it costs
+
+Each row is a decision that was measured, not assumed. `F##` are findings in
+`docs/notes.md`; figures are in `graphs/`.
+
+| knob | setting | why this value | the trade-off | evidence |
+|---|---|---|---|---|
+| **`output_dim`** | **2** (θ and ω as separate heads) | deriving `ω = dθ/dt − Kp·Vq` pushes raw sensor noise through `Kp` and pins ω to a floor the *formulation* creates | none found — two heads land **953×** below that floor | **F10** |
+| **`w_phys`** | **0.3** | the physics term is **derivative (Sobolev) supervision**: with `Vq` read from data the residual is a supplied label for `dω/dt`. Worth **5.2×** on `val_th`, 2.34× on the operator, 1.88× deployed | it buys operator quality and **costs handover stability** — `compounding` climbs 2.83 → 6.08 as `w_phys` goes 0 → 3. The optimum is where they cross. 0.1 ties 0.3 with a worse spread | **F13, F54** · `graphs/14` |
+| **`F` / `max_freq`** | **4 / 503** | what matters is **`max_freq/F` = 126 rad/s**, the *lowest* feature. Three combs sharing a lowest feature of 126 tie exactly, so the top is irrelevant | too low → degenerate with the raw `t` the trunk already has (`mf=126,F=4` starts at 31.5 rad/s = 0.06 cycles/window, the worst arm ever measured); too high → above the signal, which is 99.98% below 126 rad/s | **F31, F50, F51, F56** · `graphs/10, 20` |
+| **`W`** | **40** (12.5 ms) | W=40/50/100 are statistically tied; 10 and 20 are worse | **W=20 halves the network calls** (80 → 40 per simulated second, 19.4 → 10.9 ms/sim-s) for **1.88×** the error. A real lever if speed matters | **F32, F45, F58, F60** · `graphs/11` |
+| **`hidden_dim`** | **64** | `val_th` and `per_window_rms` are **flat** from 32 to 128 — capacity is not the binding constraint | width buys **handover stability, not operator quality**: `compounding` 5.9 (h32) → 3.4 (h128). Below 64 hurts the rollout; above buys nothing | **F46** · `graphs/17` |
+| **`sensors`** | **5000** (dt = 100 µs) | halving `dt` *appears* to buy 1.58×, but that is the **noise model shrinking with `dt`**, not better integration. At fixed noise spectral density the error is flat | the trapezoid's own truncation error is **5 orders of magnitude** below the sensor noise — integration was never the limit. Move to 10000 to match a 50 µs EMT step, not for accuracy | **F48, F49** · `graphs/19` |
+| **`n_runs`** | **5000** | 1000 → 5000 halved the train/val gap (2.60 → 1.45) and improved `val_th` 1.83× | 5000 → 10000 gives **no measurable improvement**, at 2× the data *and* 2× the epochs. The gap sits at ~1.45; that is where this setup lives, not a deficit | **F22, F55** |
+| **residual form** | **eq-4** (stored `Vq`) | its null space is exactly `(θ₀, ω₀)`, so it is pure derivative supervision and **cannot** be satisfied by a wrong solution | eq-6 (`Vq` from the predicted angle) lets a *self-consistent wrong angle* zero the residual. Never better, up to **8× worse**, degrading monotonically with `w_phys` | **F16, F53** · `graphs/21` |
+| **architecture** | **unstacked DeepONet** | the branch consumes the 378-sample window **once**; a plain MLP re-consumes it at all 125 query points | `Single_PINN` at matched *and* higher capacity is **~10× worse** in error terms (~107× on MSE) and **3.3× slower per epoch** — within 3% of the 3.2× predicted a priori | **F52** |
+| **`omega_pll` range** | **±20 (wide)** | on a *common* test set the wide model matches the narrow one even in a ±0.2 band | narrowing buys **nothing** — the earlier 1.4× was a validation-set-difficulty artefact. Wide also covers cold acquisition, so there is no reason to ship a specialist | **F59 (retracted), F61** |
+| **`Kp`, `Ki`** | **fixed** by default; **inputs** with `--gains` | as inputs, the PLL can be retuned with no retrain — something Karampinis describes as possible but does not do | **~2.5×** on angle error at 25/300 (3.5× averaged over ζ = 0.20–2.50) and **~5%** on inference time. A fixed-gain model is **38× worse** one grid step away, so this is the only option if the gains ever move | **F57, F60** · `graphs/rahul/03, 06` |
+| **`split_seed`** | **0**, always | the train/val split must not move with the network init, or neither can be attributed | — | **F16** |
+| **`n_eval_runs`** | **150** | at 20, subsampling noise (~11% s.e.) exceeds the effects being measured | ~5 s per checkpoint. `reval.py` re-scores without retraining | **F21** |
+| optimiser | SOAP, `lr 3e-3`, `wd 0.01`, batch 512, patience 40 | inherited from Karampinis et al. and never a bottleneck | `patience` also drives the LR schedule (`patience//3`) — raising it **slows convergence**, which is what stalled the n=10000 run | **F55** |
+
+### The three claims that need no caveat
+
+1. **The operator adds no independent error floor.** It sits a constant **9.6%** above the
+   noise-driven floor at two different timesteps, so its accuracy is set by the reference
+   it learns from — not by anything in the network.
+2. **Error growth is sub-diffusive.** **2.9×** over 40 recurrent handovers against **6.3×**
+   for an undamped random walk, and it saturates. The surrogate inherits the loop's own
+   damping (ζ = 0.72).
+3. **The envelope was measured, not assumed.** Grid frequency at 5× and amplitude at 3×
+   the trained range cost under 11%; faults deeper and longer than trained degrade
+   gracefully. The one hard edge is `ω₀`, and past ~40 rad/s it is the **PLL loop itself**
+   that stops acquiring inside the window — not the surrogate. (`graphs/15, 16`)
+
+---
+
 ## How the data flows
 
 ```mermaid

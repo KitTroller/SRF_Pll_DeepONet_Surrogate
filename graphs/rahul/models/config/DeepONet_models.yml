@@ -1,0 +1,10 @@
+hidden_dim: 64
+output_dim: 2
+num_fourier_feats: 0
+max_fourier_feat_frequency: 100
+activation: tanh
+
+sizes:
+  trunk_net: [1, 64, 64, 64] # input size changed later in code depending on F
+  branch_net: [3, 64, 64, 64]  # input size changed later in code depending on number of sensors and windows: W/S
+  pinn_net: [1512, 64, 64, 1]
