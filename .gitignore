@@ -6,5 +6,6 @@ runs.txt
 .DS_Store
 *.py[cod]
 __pycache__/
-*.npz
-data/*.npz
+#*.npz
+#data/*.npz
+data/famG_W40.npz
