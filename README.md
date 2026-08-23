@@ -308,8 +308,9 @@ flowchart TD
 | `ood_test.py` | The out-of-distribution ladder — pushes one axis at a time past the training box, with every scenario sharing one uniform draw and one noise realisation so *only* the range differs. Plots every timestep family on one absolute axis. |
 | `lockin_range.py` | The SRF-PLL's own acquisition limit: cycle slips and lock time vs initial frequency error. **No network involved** — this is the reference solver alone, and it is what explains the single edge in the OOD ladder. |
 | `dt_convergence.py` | Whether finer sampling buys accuracy. Solver only. Separates integration error (negligible — 5 orders below) from sensor noise, and shows the apparent `dt` gain is the noise model shrinking rather than better integration. |
-| `speed_benchmark.py` | Cost and accuracy against the paper's code: their whole control block, their NN alone, their NN driven by our voltage, our solver at several steps, and us — all against one fine-grid reference. |
-| `envelope_figure.py` | The single accuracy-vs-cost figure (`graphs/12_head_to_head.png`), restricted to the range their released network was trained on. |
+| `speed_benchmark.py` | Cost and accuracy against the paper's code: their whole control block, their NN alone, their NN driven by our voltage, our solver at several steps, and us — all against one fine-grid reference. Mostly used as a **library** — `envelope_figure.py` and `ood_test.py` import `head_to_head`, `solve_at` and `deeponet_at` from it. |
+| `envelope_figure.py` | `graphs/12` — the head-to-head. Two panels from one run: error against time, and accuracy against cost. Restricted to the range their released network was trained on. **Supersedes the retired figure 09**, whose right panel it duplicated and whose left panel it now draws with one more method. |
+| `common_test.py` | **The** definition of a cross-family comparison: fresh trajectories at named gains, the recurrent rollout, and `load_f32`. Four scripts had grown their own copy; a per-family `val_th` is not comparable across families (F59/F61), so this must stay single-sourced. |
 | `pll_plots.py` | All report figures 01-06 in one run. |
 
 ### Everything else
@@ -317,12 +318,12 @@ flowchart TD
 | path | what |
 |---|---|
 | `config/` | The three YAMLs above. Editing `Windows` or `sensors` changes the architecture — old checkpoints survive because `config()` is stored inside them. |
-| `data/` | `*.npz` datasets. **Git-ignored** (~1 GB each) and **unreproducible** — the LHS draw is unseeded, so an overwritten dataset is gone and every record naming it becomes un-revaluable. |
+| `data/` | `*.npz` datasets, ~1-4 GB each. Nine are committed through **Git LFS**; `famG_W40` and `famF_W40` are ignored. Families made before 2026-08-21 have an unseeded LHS draw, so an overwritten one is gone and every record naming it becomes un-revaluable — hence the clobber guard. Pass `--lhs_seed` and that stops being true. |
 | `runs/` | Checkpoints. Stays at the project root because every JSON record stores `"ckpt": "runs/..."`. |
 | `Hyperparameter_sweep/` | One `sweeps_<family>/` directory per experiment family, one JSON per finished config. |
 | `graphs/` | Numbered PNGs; `docs/notes.md` says what each one proves. |
 | `hpc/` | DTU HPC job arrays. See [`hpc/README.md`](hpc/README.md). |
-| `docs/notes.md` | The running log — every finding (F*), every retraction, the roadmap. **Git-ignored**, so it lives only on the laptop. |
+| `docs/notes.md` | The running log — every finding (F*), every retraction, the defence sheet. Committed. It was git-ignored until 2026-08-22, because `.gitignore` began with a bare `docs`; the workshop `.pptx`/`.xlsx` in that folder stay ignored. |
 | `PINNs-in-EMT/` | The paper's own repository, used as the benchmark. Recorded as a gitlink with no `.gitmodules`, so a fresh clone gets an empty directory — see below. |
 
 ---
@@ -414,22 +415,50 @@ python src/sweep.py --collect --results_dir sweeps_famX_ff --plot ff
 python src/plot_sweeps.py sweeps_famX_ff --kind arms
 ```
 
-### 4. Everything else you can run
+### 4. Every figure, and the command that draws it
+
+Each script owns its figure and regenerates it from scratch — none of them read a cached
+intermediate, so a stale figure is always one command away from being correct. Run them
+**from the project root**; `paths.py` resolves everything else.
+
+| # | figure | command |
+|---|---|---|
+| 01-06 | initial conditions, lock check, prediction vs truth, window sweep, error by window, residual budget | `python src/pll_plots.py` |
+| 10 | Fourier arms of a sweep directory (`F=0` / `mf503` / `mf628`, every seed a dot) | `python src/plot_sweeps.py sweeps_famB_ff --kind arms` |
+| 11 | the `W` sweep | `python src/plot_sweeps.py sweeps_famB_W --kind W` |
+| 14 | the `w_phys` sweep | `python src/plot_sweeps.py sweeps_famB_wphys --kind wphys` |
+| 17 | hidden-dim sweep | `python src/plot_sweeps.py sweeps_famB_hd --kind hd` |
+| 21 | eq-4 vs eq-6 | `python src/plot_sweeps.py sweeps_famB_eq4vs6 --kind residual` |
+| 12 | **head-to-head**: us vs the paper's NN vs the solver — error in time and accuracy vs cost, inside their trained range | `python src/envelope_figure.py runs/<tag>.pth --n_runs 32` |
+| 15 | OOD ladder — one axis at a time past the training box | `python src/ood_test.py runs/<a>.pth runs/<b>.pth --n_runs 32` |
+| 16 | the loop's own acquisition limit (no network involved) | `python src/lockin_range.py` |
+| 19 | does a finer timestep buy anything? (solver only) | `python src/dt_convergence.py` |
+| 20 | per-window and full-run spectra — where the residual energy sits | `python src/dft_spectrum.py` |
+| 22 | exp16: faults on/off and the gain box, on a common test set | `python src/exp16_report.py` |
+| 23 | **speed vs accuracy** for the four deliverable models — both trades on one axis | `python src/speed_accuracy.py` |
+| rahul/01-02 | model menu; theta and omega split | `python src/rahul_report.py` |
+| rahul/03 | error across the whole `(Kp, Ki)` box, gains vs fixed | `python src/gain_sensitivity.py runs/<gains tag>.pth` |
+| rahul/04-06 | prediction vs truth per model (W=40, W=20), plus the gain showcase | `python src/rahul_contenders.py` |
+
+Figure **09 is retired** — figure 12 draws its error-vs-time panel with one more method and
+its cost panel was already a subset.
+
+**Figures 12, 22 and 23 are not on a common y-axis with each other.** 12 measures error
+against a 12.5 µs fine-grid reference inside the paper NN's trained range; 22 and 23
+measure against the 100 µs training solver at `ω₀ ∈ ±2`. Same-looking axes, different
+definitions of "θ RMS". Anything comparing two *families* must go through
+`common_test.py`, never through a per-family `val_th` — that confusion is F59, retracted
+in F61, and it has cost this project five separate results.
+
+### Not figures
 
 | command | what you get |
 |---|---|
 | `python src/PLL_Simulator.py` | Simulator sanity check: settled `Vd -> +1`, `Vq -> 0`, and the lock plot |
-| `python src/pll_plots.py` | Report figures 01-06 into `graphs/` |
 | `python src/reval.py sweeps_famX_ff --n_eval 150` | Re-score every checkpoint in a directory. Rewrites the JSONs in place — back the directory up first |
 | `python src/fault_split.py runs/<tag>.pth` | Deployed metrics split into clean / sag / phase jump |
-| `python src/speed_benchmark.py` | Cost table vs the paper's solvers, plus `graphs/09_accuracy_vs_step.png` |
-| `python src/envelope_figure.py runs/<tag>.pth --n_runs 32` | `graphs/12_head_to_head.png` — the head-to-head |
-| `python src/ood_test.py runs/<a>.pth runs/<b>.pth --n_runs 32` | `graphs/15_ood_ladder.png`. Pass checkpoints from different families to compare timesteps on one axis; `W`/`S`/`dt` are read from each checkpoint, so the datasets need not be present |
-| `python src/lockin_range.py` | `graphs/16_lockin_range.png` — the loop's acquisition limit |
-| `python src/dt_convergence.py` | `graphs/19_dt_convergence.png` — does a finer timestep buy anything? |
-| `python src/rahul_report.py` | `graphs/rahul/01_model_menu.png` + `02_theta_omega.png` — every deliverable model's deployed error and cost, read from the sweep records |
-| `python src/rahul_contenders.py` | `graphs/rahul/04`, `05`, `06` — prediction vs truth per model, W=40 and W=20 in separate panels, plus the gain showcase. The checkpoint list is the `MODELS` table at the top of the file |
-| `python src/gain_sensitivity.py runs/<gains tag>.pth` | `graphs/rahul/03` — error across the whole `(Kp, Ki)` box, gains-model vs fixed-gain model. Its `rollout_err` is also the **common-test harness**: use it, not per-family `val_th`, whenever two families are compared |
+| `python src/rewindow.py famX_W10.npz --W 50` | Derive a new windowing without re-solving. Splits and merges; round trip verified bit-exact |
+| `python src/speed_benchmark.py` | Cost tables against the paper's own solver and NN. Also the library behind figures 12 and 15 |
 | `python hpc/smoke_test.py` | One real optimiser step; checks the environment can train, not just import |
 | `python hpc/bench.py` | Optimiser-step cost on this machine, every W, every thread count |
 

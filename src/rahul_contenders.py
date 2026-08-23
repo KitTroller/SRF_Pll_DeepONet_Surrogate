@@ -22,8 +22,8 @@ import torch
 
 from PLL_Simulator import PLLSimulator
 from paths import GRAPHS, ROOT
-from pll_infer import predict_window
-from train_pll import load_checkpoint, OMEGA_BASE
+from common_test import load_f32, rollout
+from train_pll import OMEGA_BASE
 
 OUT = GRAPHS / "rahul"
 DT, N = 100e-6, 5000
@@ -60,20 +60,13 @@ def truth(kp, ki, seed=3):
 
 
 def roll(ckpt, V, th_t, om_t, kp, ki):
-    torch.set_default_dtype(torch.float32)
-    m, ck = load_checkpoint(ROOT / "runs" / ckpt)
-    W, S = ck["data_meta"]["W"], ck["data_meta"]["S"]
-    t = ck["t_local"]; t_ext = torch.cat([t, t[-1:] + float(t[1] - t[0])])
-    g = bool(getattr(m, "n_extra", 0))
-    th0, om0 = th_t[0].float(), om_t[0].float()
-    pth, pom = [], []
-    for k in range(W):
-        sl = slice(k * S, (k + 1) * S)
-        p, o = predict_window(m, ck, th0, om0, V[0][sl].float(), V[1][sl].float(),
-                              V[2][sl].float(), t_ext, kp if g else None, ki if g else None)
-        pth.append(p[:-1]); pom.append(o[:-1]); th0, om0 = p[-1], o[-1]
+    """Predicted theta and omega over the whole run. The recurrence itself lives in
+    common_test.rollout -- only the single hand-picked trajectory above is local to this
+    file, because this figure draws one legible trace rather than averaging a batch."""
+    m, ck = load_f32(ROOT / "runs" / ckpt)
+    pth, pom = rollout(m, ck, V, th_t[0].float(), om_t[0].float(), kp, ki)
     torch.set_default_dtype(torch.float64)
-    return torch.cat(pth).double().numpy(), torch.cat(pom).double().numpy()
+    return pth.double().numpy(), pom.double().numpy()
 
 
 def contenders(models, W_label, fname):

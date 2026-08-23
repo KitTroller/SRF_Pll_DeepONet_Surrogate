@@ -23,8 +23,8 @@ import torch
 
 from PLL_Simulator import PLLSimulator
 from paths import GRAPHS, ROOT
-from pll_infer import predict_window
-from train_pll import load_checkpoint, OMEGA_BASE
+from common_test import load_f32, truth as _truth, rollout_rms
+from train_pll import OMEGA_BASE
 
 KP_GRID = [10.0, 18.0, 25.0, 33.0, 41.0, 50.0]
 KI_GRID = [100.0, 200.0, 300.0, 400.0, 500.0, 600.0]
@@ -32,47 +32,19 @@ THEIRS = (25.0, 300.0)
 
 
 def truth(kp, ki, n_runs, W, S, dt, seed=0):
-    """Ground truth at ONE (Kp,Ki), with the same ICs in every cell."""
-    torch.set_default_dtype(torch.float64)
-    torch.manual_seed(seed)                      # identical ICs and noise across cells
-    N = W * S
-    sim = PLLSimulator(dt=dt)
-    sim.N, sim.n_runs = N, n_runs
-    sim.t = (torch.arange(N) * dt).reshape(1, N)
-    sim.physics.Kp = torch.full((n_runs,), kp, dtype=torch.float64)
-    sim.physics.Ki = torch.full((n_runs,), ki, dtype=torch.float64)
-    ga = (torch.rand(n_runs, 1) * 2 - 1) * torch.pi
-    fo = (torch.rand(n_runs, 1) * 2 - 1) * 0.2
-    ao = (torch.rand(n_runs, 1) * 2 - 1) * 0.05
-    th0 = ga.squeeze(-1) + (torch.rand(n_runs) * 2 - 1) * 0.5 * torch.pi
-    th0 = (th0 + torch.pi) % (2 * torch.pi) - torch.pi
-    om0 = (torch.rand(n_runs) * 2 - 1) * 2.0     # HIS regime, not the full +/-20
-    Va, Vb, Vc = sim._grid_phases(fo, ao, ga)
-    with torch.no_grad():
-        th, om = sim.simulate_batch(Va, Vb, Vc, th0, om0, scheme="trapezoid")[:2]
-    return Va, Vb, Vc, th, om
+    """Ground truth at ONE (Kp,Ki), with the same ICs in every cell.
+
+    Thin shim over common_test.truth, kept so the (W, S, dt) call signature used
+    throughout this file still works."""
+    return _truth(kp, ki, n_runs, seed=seed, dt=dt, n=W * S)
 
 
 def rollout_err(model, ck, kp, ki, n_runs, W, S, dt):
+    """THE common-test harness. Fresh trajectories at these gains, full recurrent
+    rollout, mean per-run theta RMS -- comparable across families in a way that any
+    per-family `val_th` is not (F59/F61)."""
     Va, Vb, Vc, th_t, om_t = truth(kp, ki, n_runs, W, S, dt)
-    torch.set_default_dtype(torch.float32)
-    t = ck["t_local"]
-    t_ext = torch.cat([t, t[-1:] + float(t[1] - t[0])])
-    errs = []
-    for r in range(n_runs):
-        th0, om0 = th_t[r, 0].float(), om_t[r, 0].float()
-        pred = []
-        want = bool(getattr(model, "n_extra", 0))     # fixed-gain models take no kp/ki
-        for k in range(W):
-            sl = slice(k * S, (k + 1) * S)
-            p, o = predict_window(model, ck, th0, om0, Va[r, sl].float(),
-                                  Vb[r, sl].float(), Vc[r, sl].float(), t_ext,
-                                  kp if want else None, ki if want else None)
-            pred.append(p[:-1]); th0, om0 = p[-1], o[-1]        # the handover
-        e = torch.cat(pred).double() - th_t[r]
-        errs.append(float(e.pow(2).mean().sqrt()))
-    torch.set_default_dtype(torch.float64)
-    return float(np.mean(errs))
+    return rollout_rms(model, ck, (Va, Vb, Vc), th_t, om_t, kp, ki)
 
 
 def main():
@@ -84,7 +56,7 @@ def main():
                         "tuning only, so it should be good at 25/300 and bad elsewhere -- "
                         "which is exactly the argument for making the gains inputs.")
     a = p.parse_args()
-    model, ck = load_checkpoint(ROOT / a.ckpt if not a.ckpt.startswith("/") else a.ckpt)
+    model, ck = load_f32(ROOT / a.ckpt if not a.ckpt.startswith("/") else a.ckpt)
     if not getattr(model, "n_extra", 0):
         raise SystemExit("this is not a gains model -- pass a checkpoint whose tag ends _g")
     m = ck["data_meta"]; W, S, dt = m["W"], m["S"], m["dt"]
@@ -109,7 +81,7 @@ def main():
         # above leave it at float64 -- the weights are float32, so inference would die on
         # a dtype mismatch. Same trap as accuracy_benchmark documents.
         torch.set_default_dtype(torch.float32)
-        fm, fck = load_checkpoint(ROOT / a.fixed if not a.fixed.startswith("/") else a.fixed)
+        fm, fck = load_f32(ROOT / a.fixed if not a.fixed.startswith("/") else a.fixed)
         torch.set_default_dtype(torch.float64)
         Zf = np.zeros_like(Z)
         print("\n  fixed-gain model on the same grid (trained at Kp=25, Ki=300 ONLY):")
