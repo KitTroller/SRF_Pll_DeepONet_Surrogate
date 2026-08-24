@@ -1,4 +1,4 @@
-# Kp and Ki as NETWORK INPUTS, so Rahul can retune the PLL without a retrain. 16 jobs.
+# Kp and Ki as NETWORK INPUTS, so the PLL can be retuned without a retrain. 16 jobs.
 #
 # WARNING, THE `--epochs 800` BELOW IS NOT WHAT RAN. The copy submitted on the cluster
 # had a raised cap: sweeps_famJ_W20 records show epochs_run of 1024, 1047, 1097 and 1099,
@@ -26,12 +26,12 @@
 #
 # RANGES: Kp 10-50, Ki 100-600 (theirs is 25/300). That spans wn = sqrt(Ki) = 10-24.5
 # rad/s and zeta = Kp/(2 sqrt(Ki)) = 0.20-2.50, i.e. underdamped through overdamped.
-# ASK RAHUL whether that is the range he wants -- it is wide, and a narrower one would be
+# CONFIRM whether that is the range they want -- it is wide, and a narrower one would be
 # easier to fit. Change it in config/initial_conditions.yml under `gains:`.
 #
 # FOUR ARMS = 2 omega ranges x 2 window lengths, 4 seeds each:
 #   famJ  gains + WIDE omega (+/-20)   W=40, W=20
-#   famK  gains + NARROW omega (+/-2)  W=40, W=20   <- closest to his co-simulation
+#   famK  gains + NARROW omega (+/-2)  W=40, W=20   <- closest to the co-simulation
 #
 # n_runs = 5000 THROUGHOUT, deliberately, and this answers the "5000 or 10000?" question
 # with a measurement instead of a guess: adding Kp and Ki makes the LHS 7-D instead of
@@ -41,7 +41,7 @@
 #
 # EXPECT IT TO BE WORSE than the fixed-gain model. It is learning a FAMILY of controllers
 # from the same budget. The number that matters is how much worse -- that is the price of
-# the flexibility, and it is what Rahul needs in order to decide.
+# the flexibility, and it is what the integrating team needs in order to decide.
 #
 # Generate first (each is one solve, two windowings, same LHS):
 #   .venv/bin/python hpc/generate_family.py --stem famJ --W 20 40 --n_runs 5000 --gains

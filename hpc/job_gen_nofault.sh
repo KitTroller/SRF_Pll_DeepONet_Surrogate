@@ -101,7 +101,7 @@ gen () {
 # famL: no faults, the SAME wide gain box as famJ, so famL-vs-famJ moves only the faults
 gen famL || exit 1
 
-# famM: no faults, gain box trimmed to the region graphs/rahul/03 measures as accurate
+# famM: no faults, gain box trimmed to the region graphs/Tunable_Kp_Ki_tests/03 measures as accurate
 gen famM --kp_range 18 45 --ki_range 180 520 || exit 1
 
 echo "done:"

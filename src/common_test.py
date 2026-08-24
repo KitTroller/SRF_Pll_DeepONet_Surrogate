@@ -1,7 +1,7 @@
 """ONE definition of "the common test". Import it; do not re-implement it.
 
 Four scripts had grown their own copy of this: `gain_sensitivity.py`,
-`exp16_report.py`, `speed_accuracy.py` and `rahul_contenders.py`. That is not a line-count
+`exp16_report.py`, `speed_accuracy.py` and `contenders.py`. That is not a line-count
 problem, it is a correctness one. Every cross-family comparison in this project rests on
 "both models saw the same trajectories", and with four copies a change to the initial-
 condition draw in one of them silently stops three figures from being comparable while
@@ -19,7 +19,7 @@ are not comparable across families; that is the whole lesson of F59/F61.
     rollout(model, ck, V, th0, om0, kp, ki)   recurrent prediction over a whole run
     rollout_rms(model, ck, V, th_t, om_t)     mean per-run theta RMS, optionally timed
 
-`rahul_contenders.py` deliberately keeps its own single hand-picked trajectory -- it draws
+`contenders.py` deliberately keeps its own single hand-picked trajectory -- it draws
 one legible trace rather than averaging a batch -- but uses `rollout` from here so the
 recurrence and the handover are shared.
 """

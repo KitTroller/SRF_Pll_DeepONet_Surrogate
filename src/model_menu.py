@@ -1,16 +1,16 @@
-"""The model menu for Rahul's co-simulation. Writes into graphs/rahul/.
+"""The model menu for the EMT co-simulation. Writes into graphs/Tunable_Kp_Ki_tests/.
 
-    python src/rahul_report.py
+    python src/model_menu.py
 
 He has to pick three things, and each has a measured price:
 
     window length   W=40 (12.5 ms) or W=20 (25 ms). W=20 HALVES the network calls per
                     simulated second, which is a real speed lever because inference is
                     overhead-bound, not FLOP-bound (F25).
-    omega range     wide (+/-20, covers acquisition) or narrow (+/-2, his regime). His
+    omega range     wide (+/-20, covers acquisition) or narrow (+/-2, the co-simulation regime). Their
                     co-simulation never leaves |omega| < 0.15, and only 6.8% of the wide
                     family's windows are in that band.
-    gains           fixed Kp/Ki, or Kp/Ki as network INPUTS so he can retune without a
+    gains           fixed Kp/Ki, or Kp/Ki as network INPUTS so they can be retuned without a
                     retrain.
 
 Cost per simulated second is `calls/s x cost per call`, and calls/s = 1/(S*dt) -- it does
@@ -25,7 +25,7 @@ import numpy as np
 
 from paths import GRAPHS, ROOT
 
-OUT = GRAPHS / "rahul"
+OUT = GRAPHS / "Tunable_Kp_Ki_tests"
 
 # label -> (results dir, W, wide/narrow, fixed/gains)
 VARIANTS = [
@@ -85,7 +85,7 @@ def fig_menu(V):
 
 
 def fig_theta_omega(V):
-    """theta and omega separately -- omega was the visibly weak output in his first test,
+    """theta and omega separately -- omega was the visibly weak output in the first closed-loop test,
     and the two do not move together across these variants."""
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(1, 2, figsize=(14, 5.0))

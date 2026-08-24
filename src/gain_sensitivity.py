@@ -1,9 +1,9 @@
-"""Is the tunable-gain model usable NEAR Rahul's operating point? graphs/rahul/03.
+"""Is the tunable-gain model usable NEAR the co-simulation's operating point? graphs/Tunable_Kp_Ki_tests/03.
 
     python src/gain_sensitivity.py runs/famK_W40_n5000_W40_F4_mf503_wp0.3_s0sp0_g.pth
 
 F57 measured the average cost of making Kp and Ki inputs: 3.5x on deployed angle error.
-But an average over a box spanning zeta = 0.20 to 2.50 is not what he needs -- he runs at
+But an average over a box spanning zeta = 0.20 to 2.50 is not what they need -- they run at
 Kp=25, Ki=300. If the model is accurate near there and only degrades at the corners, 3.5x
 is pessimistic FOR HIM. If it is uniformly 3.5x, it is not.
 
@@ -14,7 +14,7 @@ else -- vs the solver at the model's own dt, so this isolates network error from
 discretisation.
 
 Initial conditions use omega0 in +/-2, i.e. the warm-co-simulation regime, not the full
-acquisition envelope. That is the honest test: how good is it where he actually runs it.
+acquisition envelope. That is the honest test: how good is it where it is actually run.
 """
 import argparse
 
@@ -119,7 +119,7 @@ def main():
     fig.suptitle("Where in the (Kp, Ki) box is each model accurate?   "
                  r"$\omega_0 \in \pm2$ (warm co-simulation), $\zeta$ contours in white",
                  fontsize=11)
-    out = GRAPHS / "rahul"; out.mkdir(parents=True, exist_ok=True)
+    out = GRAPHS / "Tunable_Kp_Ki_tests"; out.mkdir(parents=True, exist_ok=True)
     fig.savefig(out / "03_gain_sensitivity.png", dpi=160)
     print(f"\n-> {out/'03_gain_sensitivity.png'}")
 

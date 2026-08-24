@@ -89,7 +89,7 @@ Each row is a decision that was measured, not assumed. `F##` are findings in
 | **residual form** | **eq-4** (stored `Vq`) | its null space is exactly `(θ₀, ω₀)`, so it is pure derivative supervision and **cannot** be satisfied by a wrong solution | eq-6 (`Vq` from the predicted angle) lets a *self-consistent wrong angle* zero the residual. Never better, up to **8× worse**, degrading monotonically with `w_phys` | **F16, F53** · `graphs/21` |
 | **architecture** | **unstacked DeepONet** | the branch consumes the 378-sample window **once**; a plain MLP re-consumes it at all 125 query points | `Single_PINN` at matched *and* higher capacity is **~10× worse** in error terms (~107× on MSE) and **3.3× slower per epoch** — within 3% of the 3.2× predicted a priori | **F52** |
 | **`omega_pll` range** | **±20 (wide)** | on a *common* test set the wide model matches the narrow one even in a ±0.2 band | narrowing buys **nothing** — the earlier 1.4× was a validation-set-difficulty artefact. Wide also covers cold acquisition, so there is no reason to ship a specialist | **F59 (retracted), F61** |
-| **`Kp`, `Ki`** | **fixed** by default; **inputs** with `--gains` | as inputs, the PLL can be retuned with no retrain — something Karampinis describes as possible but does not do | **~2.5×** on angle error at 25/300 (3.5× averaged over ζ = 0.20–2.50) and **~5%** on inference time. A fixed-gain model is **38× worse** one grid step away, so this is the only option if the gains ever move | **F57, F60** · `graphs/rahul/03, 06` |
+| **`Kp`, `Ki`** | **fixed** by default; **inputs** with `--gains` | as inputs, the PLL can be retuned with no retrain — something Karampinis describes as possible but does not do | **~2.5×** on angle error at 25/300 (3.5× averaged over ζ = 0.20–2.50) and **~5%** on inference time. A fixed-gain model is **38× worse** one grid step away, so this is the only option if the gains ever move | **F57, F60** · `graphs/Tunable_Kp_Ki_tests/03, 06` |
 | **`split_seed`** | **0**, always | the train/val split must not move with the network init, or neither can be attributed | — | **F16** |
 | **`n_eval_runs`** | **150** | at 20, subsampling noise (~11% s.e.) exceeds the effects being measured | ~5 s per checkpoint. `reval.py` re-scores without retraining | **F21** |
 | optimiser | SOAP, `lr 3e-3`, `wd 0.01`, batch 512, patience 40 | inherited from Karampinis et al. and never a bottleneck | `patience` also drives the LR schedule (`patience//3`) — raising it **slows convergence**, which is what stalled the n=10000 run | **F55** |
@@ -114,7 +114,7 @@ A setting is only justified if the alternatives were measured. These were.
 | **`dt = 50 µs`** (10000 sensors) | **no gain** at fixed noise PSD | the apparent 1.58× was the noise model shrinking with `dt`; trapezoid truncation is 5 orders below the sensor noise | **F49** · `graphs/19` |
 | **`n_runs = 10000`** | no measurable gain, at 2× data *and* 2× epochs | data saturates near 5000; the train/val gap sits at ~1.45 either way | **F55** |
 | **narrow `ω₀` range (±2)** | overlaps wide on a common test set | the earlier 1.4× advantage was a validation-set-difficulty artefact — the two splits are not equally hard | **F59 retracted, F61** |
-| **`Kp`/`Ki` as inputs** | **~2.5×** worse at 25/300 | *not* rejected — it is offered as a variant. It is the only option if the gains ever move, since a fixed model is **38×** worse one grid step away | **F57, F60** · `graphs/rahul/03, 06` |
+| **`Kp`/`Ki` as inputs** | **~2.5×** worse at 25/300 | *not* rejected — it is offered as a variant. It is the only option if the gains ever move, since a fixed model is **38×** worse one grid step away | **F57, F60** · `graphs/Tunable_Kp_Ki_tests/03, 06` |
 
 ### If you want something different — the levers, in order of usefulness
 
@@ -233,7 +233,7 @@ draw different minibatch orders from the same seed.
 | `19` | does a finer timestep buy anything (solver only) |
 | `20` | where the signal's power actually is — the DFT behind `max_freq` |
 | `21` | eq-4 vs eq-6 residual |
-| `rahul/01`–`06` | the deliverable: model menu, θ/ω split, gain sensitivity, contenders, gain showcase |
+| `Tunable_Kp_Ki_tests/01`–`06` | the deliverable: model menu, θ/ω split, gain sensitivity, contenders, gain showcase |
 
 ### The three claims that need no caveat
 
@@ -436,9 +436,9 @@ intermediate, so a stale figure is always one command away from being correct. R
 | 20 | per-window and full-run spectra — where the residual energy sits | `python src/dft_spectrum.py` |
 | 22 | exp16: faults on/off and the gain box, on a common test set | `python src/exp16_report.py` |
 | 23 | **speed vs accuracy** for the four deliverable models — both trades on one axis | `python src/speed_accuracy.py` |
-| rahul/01-02 | model menu; theta and omega split | `python src/rahul_report.py` |
-| rahul/03 | error across the whole `(Kp, Ki)` box, gains vs fixed | `python src/gain_sensitivity.py runs/<gains tag>.pth` |
-| rahul/04-06 | prediction vs truth per model (W=40, W=20), plus the gain showcase | `python src/rahul_contenders.py` |
+| Tunable_Kp_Ki_tests/01-02 | model menu; theta and omega split | `python src/model_menu.py` |
+| Tunable_Kp_Ki_tests/03 | error across the whole `(Kp, Ki)` box, gains vs fixed | `python src/gain_sensitivity.py runs/<gains tag>.pth` |
+| Tunable_Kp_Ki_tests/04-06 | prediction vs truth per model (W=40, W=20), plus the gain showcase | `python src/contenders.py` |
 
 Figure **09 is retired** — figure 12 draws its error-vs-time panel with one more method and
 its cost panel was already a subset.

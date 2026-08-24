@@ -1,8 +1,8 @@
-"""Cost against accuracy for the four models offered to Rahul. graphs/23.
+"""Cost against accuracy for the four models in the deliverable set. graphs/23.
 
     python src/speed_accuracy.py            # ~5 min
 
-The two levers he actually has are on different axes and 09_accuracy_vs_step.png shows
+The two levers the integrating team actually has are on different axes and 09_accuracy_vs_step.png shows
 neither: it compares ONE fixed-gain W=40 model against the solvers. This puts all four
 deliverable models on one plot so both trades are visible at once.
 
@@ -18,7 +18,7 @@ regenerates its own truth instead of reading the sweep records.
 
 Cost is wall clock on THIS machine through `predict_window`, i.e. the deployed path with
 autograd on, so it is directly comparable to the ms/sim-s already quoted in
-graphs/rahul/README.md. It is a batch-1 number: the surrogate's advantage narrows as the
+graphs/Tunable_Kp_Ki_tests/README.md. It is a batch-1 number: the surrogate's advantage narrows as the
 solver's vectorisation kicks in (53x at batch 1, 2.4x at batch 512 -- F41), so read this
 as "one PLL inside one EMT loop", which is the co-simulation case.
 

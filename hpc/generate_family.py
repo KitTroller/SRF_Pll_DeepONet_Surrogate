@@ -54,7 +54,7 @@ def main():
                         "co-simulation's own network solver, not from us")
     p.add_argument("--omega_range", type=float, default=None,
                    help="half-range for the PLL's initial omega, default 20 rad/s. "
-                        "Rahul's co-simulation never leaves |omega| < 0.15, and only 6.8%% "
+                        "the EMT co-simulation never leaves |omega| < 0.15, and only 6.8%% "
                         "of our windows are in that band -- a narrow model is a specialist "
                         "for warm co-simulation, not a replacement for the wide one")
     a = p.parse_args()

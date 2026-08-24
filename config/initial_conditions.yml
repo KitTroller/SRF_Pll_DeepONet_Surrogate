@@ -20,10 +20,9 @@ disturbances:
   phase_jump:
     angle_deg: [-60, 60]
 # Controller gains as NETWORK INPUTS, not constants. Off by default, so every existing
-# dataset and checkpoint is unaffected. Rahul asked for this so he can vary the PLL
-# tuning in the co-simulation without a retrain.
+# dataset and checkpoint is unaffected. Requested by the integrating team so the PLL
+# tuning can be varied in the co-simulation without a retrain.
 gains:
   enabled: false
   Kp: [10.0, 50.0]     # their config uses 25
-  Ki: [100.0, 600.0]   # their config uses 300.  wn = sqrt(Ki) -> 10 .. 24.5 rad/s
-                       # zeta = Kp/(2 sqrt(Ki)) -> 0.20 .. 2.50, i.e. under- to over-damped
+  Ki: [100.0, 600.0]   # their config uses 300.  wn = sqrt(Ki) -> 10 .. 24.5 rad/s, zeta = Kp/(2 sqrt(Ki)) -> 0.20 .. 2.50, i.e. under- to over-damped

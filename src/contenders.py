@@ -1,11 +1,11 @@
-"""Prediction vs truth for every model offered to Rahul. graphs/rahul/04, 05, 06.
+"""Prediction vs truth for every model in the deliverable set. graphs/Tunable_Kp_Ki_tests/04, 05, 06.
 
-    python src/rahul_contenders.py
+    python src/contenders.py
 
 Eight contenders, four per window length, all at dt = 100 us:
 
     wide   omega0 in +/-20  -- covers PLL acquisition
-    narrow omega0 in +/-2   -- his warm-co-simulation regime
+    narrow omega0 in +/-2   -- the warm-co-simulation regime
     fixed  Kp=25, Ki=300 baked in
     gains  Kp, Ki as network INPUTS
 
@@ -25,7 +25,7 @@ from paths import GRAPHS, ROOT
 from common_test import load_f32, rollout
 from train_pll import OMEGA_BASE
 
-OUT = GRAPHS / "rahul"
+OUT = GRAPHS / "Tunable_Kp_Ki_tests"
 DT, N = 100e-6, 5000
 THEIRS = (25.0, 300.0)
 

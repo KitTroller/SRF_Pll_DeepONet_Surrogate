@@ -1,14 +1,14 @@
 # Two questions, one array, 16 jobs. Both are about SHRINKING what the model has to
-# cover so the fixed budget buys more accuracy where Rahul actually runs.
+# cover so the fixed budget buys more accuracy where the co-simulation actually runs.
 #
-#   Q1  FAULTS.  His supervisor says the co-simulation's own network solver produces the
+#   Q1  FAULTS.  Their supervisor says the co-simulation's own network solver produces the
 #       sags and jumps, so we do not have to. Today 50% of our runs carry a fault
 #       (`disturbances.fraction: 0.5`). Turning them off does not change n_runs, so the
 #       clean regime gets sampled TWICE as densely for the same compute.
 #
 #   Q2  GAIN BOX.  F57 measured the price of making Kp and Ki inputs at 3.5x deployed
-#       angle error. graphs/rahul/03 shows that price is not uniform across the box.
-#       If we ask Rahul for a smaller range, how much of the 3.5x do we get back?
+#       angle error. graphs/Tunable_Kp_Ki_tests/03 shows that price is not uniform across the box.
+#       If a smaller gain range is requested, how much of the 3.5x do we get back?
 #
 # FOUR ARMS, and they are laid out so each comparison moves ONE thing:
 #
@@ -24,7 +24,7 @@
 #
 # THE BOX I ACTUALLY PICKED, AND WHY IT IS NOT THE ONE THE ZETA STORY SUGGESTS.
 # "Cut the underdamped corner" would mean raising Kp_lo and lowering Ki_hi, e.g.
-# Kp 20-50 / Ki 100-400 -> zeta >= 0.5. Read graphs/rahul/03 (left panel) before doing
+# Kp 20-50 / Ki 100-400 -> zeta >= 0.5. Read graphs/Tunable_Kp_Ki_tests/03 (left panel) before doing
 # that, because the measured error does not follow zeta:
 #
 #     Ki=100 row:  2.4e-3 at Kp=18 (zeta 0.90, WELL damped) and 1.8e-3 at Kp=50
@@ -50,7 +50,7 @@
 #
 # WHAT REMOVING FAULTS COSTS, and it is a real risk, not a formality. The model will have
 # NEVER seen a sag or a phase jump. In the co-simulation those waveforms still arrive at
-# our branch input as Va,Vb,Vc -- they come from his solver, but we still have to read
+# our branch input as Va,Vb,Vc -- they come from their solver, but we still have to read
 # them. famL/famM are therefore extrapolating during every fault. That has to be measured,
 # not assumed away, and the measurement is cheap because famJ's faulted windows are
 # already a labelled test set (`fault_kind != 0`).
@@ -62,7 +62,7 @@
 #
 #   Q2  score famM and famL on the SAME cells, all inside the TRIMMED box. famL is
 #       in-domain there too, so this is fair to both. If famM is not clearly better
-#       inside its own box, shrinking the range is not worth asking Rahul for.
+#       inside its own box, shrinking the range is not worth asking for.
 #   Q1  score famL and famJ on the same CLEAN cells  ->  what the density buys.
 #       Then score both on famJ's FAULTED windows    ->  what it costs.
 #       Report both numbers together or the answer is dishonest.
@@ -74,7 +74,7 @@
 #       that is the price of gains-as-inputs at all, and halving the box cannot refund it.
 #   If Q2 comes back flat, the honest conclusion is that the gain-input cost is about
 #       having two extra input dimensions, not about how wide they are, and we should
-#       stop asking Rahul to constrain his tuning.
+#       stop asking for a constrained gain range.
 #
 # REPRODUCIBLE, and this is the first batch that is. Both families are generated with
 # --lhs_seed 11. Because `create_disturbance_space` returns before touching the RNG when
