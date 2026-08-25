@@ -94,7 +94,12 @@ def main():
             # draws, which is most of the reason this batch can use 4 seeds and not 16.
             DG.initial_conditions_config.disturbances.enabled = False
         if a.freq_limit is not None:
-            PS.pll_constants.Pll.freq_limit = a.freq_limit
+            # TOP LEVEL, not under `Pll:`. PhysicsEquations reads
+            # `pll_constants.get("freq_limit")`, so assigning to `pll_constants.Pll
+            # .freq_limit` silently creates an unread key and the flag does NOTHING --
+            # you get an UNLIMITED dataset under a limited filename, which nothing
+            # downstream can detect. Verified: meta["freq_limit"] now comes back set.
+            PS.pll_constants.freq_limit = a.freq_limit
 
     # The guard MUST test the path save_dataset actually writes to. After the src/data
     # reorg, `save_dataset` resolves a bare name through paths.data() into data/, so a

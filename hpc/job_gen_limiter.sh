@@ -33,7 +33,9 @@ export MKL_NUM_THREADS=$OMP_NUM_THREADS
 export PYTHONUNBUFFERED=1
 
 echo "host $(hostname)  cores $OMP_NUM_THREADS  cwd $(pwd)"
-df -h . | tail -1
+# NOT `df`: home is quota-limited, and df reports the 851 TB shared filesystem, which
+# is always ~93% full and says nothing about whether THIS user can write 2 GB.
+getquota_zhome.sh 2>/dev/null || echo "getquota_zhome.sh unavailable"
 
 npz_state () {                                  # -> ok | corrupt | missing | unknown
     python - "$1" <<'PY'
@@ -81,4 +83,4 @@ gen famR "40"    --n_runs 5000  --lhs_seed 21                          || exit 1
 
 echo "done:"
 ls -la data/fam[NOPQR]_W*.npz
-df -h . | tail -1
+getquota_zhome.sh 2>/dev/null
