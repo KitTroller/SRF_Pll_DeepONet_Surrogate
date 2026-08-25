@@ -11,6 +11,15 @@ a time, the network maps
 and is applied **recurrently**: its own final state becomes the next window's initial
 condition, so a 0.5 s trajectory is 40 handovers with no ground truth anywhere in the loop.
 
+> **On branch `Siemens_Request` the physics is different.** The PLL limits its own
+> frequency to `omega_0 +/- 2*pi*3` rad/s (47-53 Hz) — a saturation on the PI output plus
+> back-calculation anti-windup, with the anti-windup gain derived as `Ki/Kp` so it stays
+> correct when the gains are network inputs. Everything below describes the **unlimited**
+> model and remains valid for it; the limiter's own results are `exp17` (F62-F64 in
+> `docs/notes.md`), running as of 2026-08-25. Generate a limited family with
+> `--freq_limit 18.8496`; omit it and every path is bit-identical to the unlimited one
+> (verified to 8.2e-13 rad).
+
 ## Where it comes from
 
 Two papers, one for the **system** and one for the **method**.
@@ -83,7 +92,7 @@ Each row is a decision that was measured, not assumed. `F##` are findings in
 | **`w_phys`** | **0.3** | the physics term is **derivative (Sobolev) supervision**: with `Vq` read from data the residual is a supplied label for `dω/dt`. Worth **5.2×** on `val_th`, 2.34× on the operator, 1.88× deployed | it buys operator quality and **costs handover stability** — `compounding` climbs 2.83 → 6.08 as `w_phys` goes 0 → 3. The optimum is where they cross. 0.1 ties 0.3 with a worse spread | **F13, F54** · `graphs/14` |
 | **`F` / `max_freq`** | **4 / 503** | what matters is **`max_freq/F` = 126 rad/s**, the *lowest* feature. Three combs sharing a lowest feature of 126 tie exactly, so the top is irrelevant | too low → degenerate with the raw `t` the trunk already has (`mf=126,F=4` starts at 31.5 rad/s = 0.06 cycles/window, the worst arm ever measured); too high → above the signal, which is 99.98% below 126 rad/s | **F31, F50, F51, F56** · `graphs/10, 20` |
 | **`W`** | **40** (12.5 ms) | W=40/50/100 are statistically tied; 10 and 20 are worse | **W=20 halves the network calls** (80 → 40 per simulated second, 19.4 → 10.9 ms/sim-s) for **1.88×** the error. A real lever if speed matters | **F32, F45, F58, F60** · `graphs/11` |
-| **`hidden_dim`** | **64** | `val_th` and `per_window_rms` are **flat** from 32 to 128 — capacity is not the binding constraint | width buys **handover stability, not operator quality**: `compounding` 5.9 (h32) → 3.4 (h128). Below 64 hurts the rollout; above buys nothing | **F46** · `graphs/17` |
+| **`hidden_dim`** | **64** | `val_th` and `per_window_rms` are **flat** from 32 to 128 — the **latent** dimension is not the binding constraint | it buys **handover stability, not operator quality**: `compounding` 5.9 (h32) → 3.4 (h128). Below 64 hurts the rollout; above buys nothing. **Read F63 before generalising this**: `hidden_dim` only ever moved `sizes[-1]`, so interior width and depth were never tested — `exp17` does that | **F46, F63** · `graphs/17` |
 | **`sensors`** | **5000** (dt = 100 µs) | halving `dt` *appears* to buy 1.58×, but that is the **noise model shrinking with `dt`**, not better integration. At fixed noise spectral density the error is flat | the trapezoid's own truncation error is **5 orders of magnitude** below the sensor noise — integration was never the limit. Move to 10000 to match a 50 µs EMT step, not for accuracy | **F48, F49** · `graphs/19` |
 | **`n_runs`** | **5000** | 1000 → 5000 halved the train/val gap (2.60 → 1.45) and improved `val_th` 1.83× | 5000 → 10000 gives **no measurable improvement**, at 2× the data *and* 2× the epochs. The gap sits at ~1.45; that is where this setup lives, not a deficit | **F22, F55** |
 | **residual form** | **eq-4** (stored `Vq`) | its null space is exactly `(θ₀, ω₀)`, so it is pure derivative supervision and **cannot** be satisfied by a wrong solution | eq-6 (`Vq` from the predicted angle) lets a *self-consistent wrong angle* zero the residual. Never better, up to **8× worse**, degrading monotonically with `w_phys` | **F16, F53** · `graphs/21` |
@@ -115,6 +124,9 @@ A setting is only justified if the alternatives were measured. These were.
 | **`n_runs = 10000`** | no measurable gain, at 2× data *and* 2× epochs | data saturates near 5000; the train/val gap sits at ~1.45 either way | **F55** |
 | **narrow `ω₀` range (±2)** | overlaps wide on a common test set | the earlier 1.4× advantage was a validation-set-difficulty artefact — the two splits are not equally hard | **F59 retracted, F61** |
 | **`Kp`/`Ki` as inputs** | **~2.5×** worse at 25/300 | *not* rejected — it is offered as a variant. It is the only option if the gains ever move, since a fixed model is **38×** worse one grid step away | **F57, F60** · `graphs/Tunable_Kp_Ki_tests/03, 06` |
+
+| **removing faults from training** | nothing on clean input (medians within 1.02x at W=40 on a common test set) | and it **costs 5-9x on voltage sags**, because a sag moves `Va,Vb,Vc` into amplitudes the model never saw. Phase jumps are unaffected (~1.25x for everyone) — a jump re-phases a still-clean sinusoid. Strictly worse | **F62** · `graphs/22` |
+| **narrowing the `Kp`/`Ki` box** | nothing (famM ties famL everywhere on a common test) | the apparent 1.36x gain was an easier validation split. The gains-as-inputs cost is about having two extra input dimensions at all, not about how wide they are | **F62** · `graphs/22` |
 
 ### If you want something different — the levers, in order of usefulness
 
@@ -365,6 +377,7 @@ python hpc/generate_family.py --stem famX --W 10 20 40 100 --lhs_seed 11
 | `--gains` | off | sample `Kp`, `Ki` per run and store them, so the network takes them as **inputs**. Tags the model `_g` |
 | `--kp_range` / `--ki_range` | from YAML | override the gain box. Either one implies `--gains` |
 | `--no_faults` | off | all runs clean. `n_runs` is unchanged, so the clean regime is sampled twice as densely — but the model then never sees a sag or jump |
+| `--freq_limit` | none | clamp `dtheta/dt` to `omega_0 +/-` this many **rad/s**. Siemens ask for 3 **Hz** = `18.8496`. At 3 rad/s only 78% of the LHS box locks inside 0.5 s and 50% of samples saturate; at `2*pi*3` it is 100% and 2.6% |
 | `--force` | off | overwrite an existing `.npz`. Think first |
 
 Use this rather than calling `generate_multi_W` directly — it refuses to overwrite an
@@ -389,7 +402,8 @@ python src/sweep.py --dataset famX_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --s
 | `--results_dir` | `sweeps` | bare name resolves to `Hyperparameter_sweep/` |
 | `--F` / `--max_freq` | from YAML | Fourier trunk features: count and top frequency [rad/s] |
 | `--w_phys` | 0.0 | weight on the ODE residuals |
-| `--hidden_dim` | from YAML | |
+| `--hidden_dim` | from YAML | the **latent contraction** width, i.e. `sizes[-1]` only — *not* the interior width. F46 swept this and nothing else |
+| `--n_layers` / `--width` | 2 / 64 | interior **depth** and **width**, never previously varied. Both defaults reproduce the YAML network at 45,696 params exactly |
 | `--seed` | 0 | network init + minibatch order |
 | `--split_seed` | 0 | train/val split — **hold this fixed, vary only `--seed`** |
 | `--n_eval_runs` | 20 | **always pass 150.** 20 produced a false positive that stood for two days |

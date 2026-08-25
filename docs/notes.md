@@ -1618,6 +1618,163 @@ from 40 to 80, so the 0.5 s rollout now performs **twice as many handovers**. Co
 roughly doubles and cancels the per-window gain exactly. You cannot hold both the
 architecture and the handover count fixed while halving dt; exp6 chose architecture.
 
+### F64 — **THE SIEMENS FREQUENCY LIMITER.** `exp17`, 100 jobs, submitted 2026-08-25.
+
+Siemens want the PLL to limit its own frequency: `dtheta/dt` must stay within
+`omega_0 +/- 2*pi*3` rad/s (47-53 Hz). That is a real change to the physics, so it lives
+on branch `Siemens_Request` and every number in this file predates it.
+
+**The limiter is TWO components, and conflating them is what stalled the first
+discussion.** A saturation on the PI output, *and* anti-windup on the integrator:
+
+```
+u      = omega + Kp*Vq
+dth/dt = omega_0 + sat(u)
+dom/dt = Ki*Vq + Kaw*(sat(u) - u)        <- back-calculation anti-windup
+```
+
+Freezing the integrator alone is NOT a limiter (`Kp*Vq` still pushes `dtheta/dt` past the
+band on its own) -- but without something stopping the integrator it winds up and the
+recovery is terrible. Both halves are needed.
+
+**`sat` is a two-ReLU clamp with the corner rounded by softplus:**
+
+```
+sat_beta(u) = u - softplus_beta(u - L) + softplus_beta(-u - L)
+```
+
+`beta -> 0` is the exact clamp. Rounding matters because the Newton solve inside the
+trapezoid needs a continuous Jacobian; a hard clamp gives `sat'` jumping 1 -> 0.
+
+**tanh was the wrong shape and the table says why.** `3*tanh(u/3)` is off by **12.6% at
+u = 2**, well inside the band where the limiter must do nothing. `sat_beta` is exact to
+1e-10 there, and its worst error is `beta*ln2`, confined to the corner:
+
+| u | true clamp | `sat_beta`, beta=0.05 | error | `3 tanh(u/3)` | error |
+|---|---|---|---|---|---|
+| 1.0 | 1.000 | 1.000 | **0** | 0.965 | -3.6e-2 |
+| **2.0** | 2.000 | 2.000 | **-1e-10** | **1.748** | **-0.252** |
+| 3.0 | 3.000 | 2.965 | -3.5e-2 | 2.285 | -0.715 |
+| 10.0 | 3.000 | 3.000 | **0** | 2.992 | -7.6e-3 |
+
+**`beta = 0.05` is FIXED, not swept, and here is the measurement that settles it.**
+Against a beta=0.001 near-exact reference: max deviation **7.3e-5 rad**, median 8e-14.
+That is **4x below the deployed theta RMS of 3e-4**, and only touches saturated samples.
+
+**`Kaw` is DERIVED as `Ki/Kp`, never stored.** Back-calculation uses `1/Ti = Ki/Kp`.
+On a gains family `Kp` in [10,50] and `Ki` in [100,600], so `Ki/Kp` spans **2 to 60** --
+a constant 12.0 would be wrong for nearly every run. It matters enormously:
+
+| Kaw | max abs dtheta vs Kaw=12 |
+|---|---|
+| 0 (no anti-windup) | **0.303 rad** |
+| 6 | 0.109 |
+| 30 | 0.150 |
+
+Three orders of magnitude above the model's own error. Anti-windup is a first-order
+modelling choice, not a detail. **Ask Siemens which scheme their block uses.**
+
+**THE UNITS NEARLY COST THE WHOLE BATCH.** The request was first read as +/-3 rad/s.
+It is +/-3 Hz = 18.8496 rad/s, and the difference is not cosmetic:
+
+| limit | locked @0.5 s | median abs eps | **% samples saturated** |
+|---|---|---|---|
+| none | 100% | 0.0021 | 0% |
+| **3 rad/s** | **78%** | 0.0032 | **49.7%** |
+| **2*pi*3** | **100%** | 0.0021 | **2.6%** |
+
+At 3 rad/s a third of the LHS box cannot lock inside 0.5 s and the IC range would have
+had to change. At 2*pi*3 nothing changes. **Confirm the units in writing.**
+
+Also corrected on the way: the lock failures at 3 rad/s are driven by the initial PHASE
+offset, not by `omega_pll`. Shrinking omega0 from +/-20 to +/-2 changes the lock rate by
+nothing (67% both); `|offset| < 1.0 rad` locks 100% and `1.0-1.6 rad` locks 50%
+(pearson r = +0.49). The relevant knob is `pll_init_angle_range_factor`.
+
+**READ THE RESULTS CONDITIONALLY OR THEY ARE MEANINGLESS.** Only 2.6% of samples touch
+the clamp, so an aggregate theta RMS averages the limiter away entirely and every arm
+will look identical. Split by "did this window saturate", the way `fault_split.py`
+splits by fault kind. `famR` is the paired unlimited control: it shares `--lhs_seed 21`
+with `famN`, and because the limiter acts *after* `_grid_phases` the two have
+bit-identical `Va/Vb/Vc` -- verified, with `theta` differing by 0.888 rad.
+
+**Verified before submitting** (three of these caught real bugs):
+* `freq_limit=None` reproduces the existing trapezoid to **8.2e-13 rad**
+* the repo integrator agrees with an independently written implementation to **3.1e-11**
+* `--freq_limit` was writing to `pll_constants.Pll.freq_limit`, which **nothing reads** --
+  the key is top level. It produced UNLIMITED data under limited filenames and would
+  never have raised. Caught by checking `meta["freq_limit"]` on an 8-run dataset.
+* `build_meta` still referenced `ph.limit_kaw` after the attribute was removed
+* the Newton loop ignored its own `tol` and ran all 10 iterations; it converges in **3.0**
+* 48 running jobs print `frequency limiter ON`, and the famR jobs correctly do not
+
+### F63 — **`hidden_dim` NEVER MEASURED WIDTH OR DEPTH. F46 IS NARROWER THAN WRITTEN.**
+
+`Unstacked_DeepONet` only ever applied `hidden_dim` to `sizes[-1]`:
+
+```
+--hidden_dim 128  ->  trunk [9, 64, 64, 128]   branch [378, 64, 64, 256]
+                                ^^^^^^ interior UNTOUCHED
+```
+
+So F46 swept the **latent contraction dimension**. The interior width (the 64s) and the
+depth have never been varied at all, and "capacity is not the binding constraint" was
+only ever established for the latent dimension.
+
+`--n_layers` and `--width` now move the other two, independently (`sizes[-1]` is still
+overwritten by `hidden_dim`, so the three axes stay separable). Backward compatible:
+no flags, `--n_layers 2` and `--width 64` all give **45,696 params** exactly.
+
+| override | trunk | params |
+|---|---|---|
+| default / L2 / w64 | [9,64,64,64] | 45,696 |
+| `--n_layers 3` / `4` | +1 / +2 layers | 54,016 / 62,336 |
+| `--width 128` / `32` | [9,128,128,64] | 107,584 / **20,896** |
+
+`exp17` grids depth {2,3,4} x width {32,64,128} at 4 seeds on `famN_W40` (limited) and
+`famR_W40` (unlimited control) -- 72 of the 100 jobs.
+
+**SCORE THE GRID ON `compounding` AND `rollout_full_rms`, NOT `val_th`.** F46's own
+result was flat on `val_th` and moved **1.7x** on compounding (5.9 at h32 -> 3.4 at h128):
+capacity buys handover stability, not operator quality. Scoring on `val_th` would
+reproduce a null by construction. Prediction, pre-registered: **flat on famR** (there is
+no headroom -- we are within 1.02x of the solver we imitate) and **open on famN**, because
+the clamp makes the target piecewise and depth is what represents kinks. `w32` at 20,896
+params is the control for "is it just parameter count".
+
+### F62 — **exp16: NEITHER REMOVING FAULTS NOR NARROWING THE GAIN BOX HELPS.**
+`graphs/22`, `src/exp16_report.py`. Both pre-registered predictions FAILED.
+
+The sweep records say famL_W40 is 1.42x better than famJ_W40 and famM_W40 another 1.36x
+better than that. **Both gaps are validation-split artefacts** -- famL/famM validate on
+fault-free data and famM on a narrower gain box. On a common test set they vanish:
+
+| clean, common test | famJ (faults, wide) | famL (no faults, wide) | famM (no faults, trimmed) | spread |
+|---|---|---|---|---|
+| W=40 | 6.01e-4 | 6.08e-4 | 6.16e-4 | **1.02x** |
+| W=20 | 1.086e-3 | 9.52e-4 | 9.59e-4 | 1.14x, ranges overlap |
+
+**Sixth instance of the F59 class of error.**
+
+And removing faults COSTS, but only for sags:
+
+| | sag (0.70 pu, 60 ms) | phase jump (+40 deg) |
+|---|---|---|
+| famJ — faults ON | **1.40x** | 1.23x |
+| famL — faults OFF | 6.78x | 1.20x |
+| famM — faults OFF | 5.55x | 1.28x |
+
+Non-overlapping by a wide margin (famJ_W40 sag [5.8, 9.6]e-4 vs famL_W40 [3.0, 6.6]e-3).
+The split is mechanical: a **phase jump** re-phases a still-clean sinusoid, so the branch
+sees a normal window and nobody suffers; a **sag** changes the amplitude of `Va,Vb,Vc` for
+60 ms, a region of input space famL/famM never visited.
+
+**Verdict: keep the faults, keep the wide gain box.** Removing faults buys nothing
+measurable and costs 5-9x on sags -- strictly worse. Narrowing the box buys nothing, so
+there is no reason to ask the integrating team to constrain their tuning. The
+gains-as-inputs cost is about having two extra input dimensions at all, not about how
+wide they are -- which is exactly the falsifier written into `exp16`'s header beforehand.
+
 ### F61 — **NARROWING THE OMEGA RANGE BUYS NOTHING. F59 RETRACTED.**
 
 F59 reported narrow-omega training as 1.2-2.7x better. **That was a validation-set
@@ -3100,32 +3257,47 @@ record of what was predicted to matter versus what actually did.
 | 8 | 3 seeds x best config | **DONE, 6 seeds** on famD, plus 16 on the famB reference arm |
 | 9 | shorter window (0.5 s / 5 windows) | **SUPERSEDED** by the full W sweep: W=40/50/100 tied, W=10 and W=20 worse (F45) |
 
-## Stage status — updated 2026-08-20
+## Stage status — updated 2026-08-25
+
+Stage 11 (write-up) was reached on 2026-08-20 and the original scope is CLOSED. Two
+things arrived after it:
 
 ```
-Stage 0  environment + baseline            DONE
-Stage 1  physics core                      DONE
-Stage 2  reference simulator               DONE   settled Vd -> +1, Vq -> 0, omega
-                                                  correlation 0.99992, window joins exact
-Stage 3  dataset builder                   DONE   LHS verified; disturbances added (F34)
-Stage 4  the operator                      DONE   two heads (F10) -- the step change
-Stage 5  physics layer (autograd)          DONE   and PROVEN gauge-invariant on paper,
-                                                  not just numerically (see START HERE)
-Stage 6  training loop                     DONE   divergence guard, atomic records,
-                                                  arch/residual flags
-Stage 7  recurrent rollout                 DONE   3.00e-4 rad clean, growth 2.9x over 40
-                                                  handovers vs 6.3x for a random walk
-Stage 8  baselines, seeds, results         DONE   6 seeds on famD; benchmarked against
-                                                  the paper's OWN code, not a reimpl.
-                                                  Only gap: Single_PINN (arch, running)
-Stage 9  hyperparameter programme          DONE   W, max_freq, hidden_dim, w_phys,
-                                                  sensors. Verdict: only dt moves the
-                                                  number -- see "WHAT ACTUALLY CHANGES"
-Stage 10 robustness + envelope             DONE   OOD ladder (F42), lock-in range (F43)
-Stage 11 write-up                          <- HERE. notes -> defence sheet -> slides
+exp16  faults on/off, gain-box width      DONE   F62. Both predictions failed; keep
+                                                 faults, keep the wide box. graphs/22
+exp17  Siemens frequency limiter          RUNNING  100 jobs, array 29224784, submitted
+       + the depth/width capacity grid              2026-08-25 15:20. F64, F63.
 ```
 
-**What "done" does not mean.** Five arrays are still on the cluster (`w_phys`, `fcount`,
-`arch`, `eq6`, `famE_W40`); the DFT is unwritten; the final model has not been retrained
-at 10000 sensors. None of those block the write-up — they refine numbers already in it,
-except `arch`, which fills the one acknowledged hole in Stage 8.
+**exp17 is on branch `Siemens_Request`, not `main`.** It changes the physics: the PLL now
+limits its own frequency to `omega_0 +/- 2*pi*3` rad/s. Every number elsewhere in this
+file is unlimited and stays valid for the unlimited model.
+
+**The seven families it needs are generated and verified** (`freq_limit=18.8496` on
+famN/O/P/Q, `None` on famR; famN and famR share `--lhs_seed 21` and have bit-identical
+`Va/Vb/Vc` with `theta` differing by 0.888 rad).
+
+### What to do when the 100 jobs land
+
+1. **Condition on saturation.** Only **2.6%** of samples touch the clamp, so an aggregate
+   metric will report "the limiter costs nothing" whatever the truth is. Split by whether
+   the window saturated, as `fault_split.py` does by fault kind.
+2. **famR is the paired control** for "what did the limiter cost" -- same LHS seed, same
+   waveforms, no limiter.
+3. **Score the 72 capacity jobs on `compounding` / `rollout_full_rms`, never `val_th`**
+   (F63).
+4. Then fold the verdicts into "WHAT ACTUALLY CHANGES" and the defence sheet, both of
+   which currently predate exp16.
+
+### Still open
+
+* **The units, in writing.** All 100 jobs assume 3 Hz. If Siemens meant 3 rad/s the batch
+  is on the wrong physics -- 50% saturation instead of 2.6%, and a third of the IC box
+  unable to lock inside 0.5 s. One sentence to the supervisor.
+* **Which anti-windup scheme** Siemens' block uses. Back-calculation was chosen because it
+  is smooth and differentiable; conditional integration would give different trajectories,
+  and the Kaw table in F64 shows that choice is worth ~0.1-0.3 rad.
+* `docs/notes.md` blocks `Deferred`, `Prototyping simplifications`,
+  `Relationship to the co-simulation draft` are still unrefined.
+* The deliverable `graphs/Tunable_Kp_Ki_tests/models/` ships copies of `pll_residual.py`
+  and `PLL_Simulator.py` that predate the limiter. Refresh them on merge.
