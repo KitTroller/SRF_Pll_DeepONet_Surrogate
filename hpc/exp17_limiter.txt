@@ -26,8 +26,12 @@
 # ARMS
 #   famN  limited, n=5000,  fixed gains     W40 W20     famR is its UNLIMITED twin,
 #   famO  limited, n=5000,  gains inputs    W40 W20     generated at the same
-#   famP  limited, n=10000, fixed gains     W40 W20     --lhs_seed 21. The limiter lives
-#   famQ  limited, n=10000, gains inputs    W40 W20     after _grid_phases, so famN and
+#   famP  limited, n=10000, fixed gains     W40      <- W40 only: disk. The     --lhs_seed 21. The limiter lives
+#   famQ  limited, n=10000, gains inputs    W40         n_runs question is
+#                                                       answerable at W=40, and
+#                                                       W is covered by famN/famO.
+#                                                       Only the n_runs x W
+#                                                       interaction is given up.     after _grid_phases, so famN and
 #   famR  UNLIMITED, n=5000, fixed gains    W40         famR share Va/Vb/Vc bit-exactly
 #                                                       -- a properly paired control.
 #
@@ -53,8 +57,8 @@
 # GENERATE FIRST:
 #   python hpc/generate_family.py --stem famN --n_runs 5000  --W 20 40 --lhs_seed 21 --freq_limit 18.8496
 #   python hpc/generate_family.py --stem famO --n_runs 5000  --W 20 40 --lhs_seed 22 --freq_limit 18.8496 --gains
-#   python hpc/generate_family.py --stem famP --n_runs 10000 --W 20 40 --lhs_seed 23 --freq_limit 18.8496
-#   python hpc/generate_family.py --stem famQ --n_runs 10000 --W 20 40 --lhs_seed 24 --freq_limit 18.8496 --gains
+#   python hpc/generate_family.py --stem famP --n_runs 10000 --W 40 --lhs_seed 23 --freq_limit 18.8496
+#   python hpc/generate_family.py --stem famQ --n_runs 10000 --W 40 --lhs_seed 24 --freq_limit 18.8496 --gains
 #   python hpc/generate_family.py --stem famR --n_runs 5000  --W 40    --lhs_seed 21
 
 --dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famN_W40
@@ -77,18 +81,10 @@
 --dataset famP_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famP_W40
 --dataset famP_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famP_W40
 --dataset famP_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famP_W40
---dataset famP_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famP_W20
---dataset famP_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famP_W20
---dataset famP_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famP_W20
---dataset famP_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famP_W20
 --dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famQ_W40
 --dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famQ_W40
 --dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famQ_W40
 --dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famQ_W40
---dataset famQ_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famQ_W20
---dataset famQ_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famQ_W20
---dataset famQ_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famQ_W20
---dataset famQ_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famQ_W20
 --dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famR_W40
 --dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famR_W40
 --dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famR_W40
