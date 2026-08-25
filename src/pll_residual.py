@@ -1,6 +1,7 @@
 import torch
 from omegaconf import OmegaConf
 from pathlib import Path
+from PLL_Simulator import saturate
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"   # src/ -> root
 pll_constants = OmegaConf.load(CONFIG_DIR / "PLL_Constants.yml")
@@ -12,9 +13,7 @@ OMEGA_BASE = 2 * torch.pi * pll_constants.Pll.f_0
 
 def _park_q(Va, Vb, Vc, theta):
     """Same q-row as PhysicsEquations.park_dqTransform, minus-sign convention (D1)."""
-    return -(2 / 3) * (Va * torch.sin(theta)
-                       + Vb * torch.sin(theta - (2 / 3) * torch.pi)
-                       + Vc * torch.sin(theta + (2 / 3) * torch.pi))
+    return -(2 / 3) * (Va * torch.sin(theta) + Vb * torch.sin(theta - (2 / 3) * torch.pi) + Vc * torch.sin(theta + (2 / 3) * torch.pi))
 
 
 def vq_from_prediction(branch, theta_dev, t_query):
@@ -37,8 +36,7 @@ def vq_from_prediction(branch, theta_dev, t_query):
     S = (branch.shape[-1] - 3) // 3
     T = t_query.shape[1]
     if T != S:
-        raise ValueError(f"eq-6 needs one query point per sensor: T={T} but S={S}. "
-                         "The stored Va/Vb/Vc are only defined at the sensor times.")
+        raise ValueError(f"eq-6 needs one query point per sensor: T={T} but S={S}. ""The stored Va/Vb/Vc are only defined at the sensor times.")
     theta0 = torch.atan2(branch[:, 0:1], branch[:, 1:2]).unsqueeze(-1)      # (B,1,1)
     Va = branch[:, 3:3 + S].unsqueeze(-1)
     Vb = branch[:, 3 + S:3 + 2 * S].unsqueeze(-1)
@@ -55,7 +53,7 @@ def build_trunk_input(t, F, max_F_freq):
         
     return torch.cat(feats, dim=-1)
     
-def compute_theta_omega(model, t_query, branch, Vq, omega_nominal=None, residual="eq4", Kp=None, Ki=None):
+def compute_theta_omega(model, t_query, branch, Vq, omega_nominal=None, residual="eq4", Kp=None, Ki=None, limit=None, beta=0.05):
     """physics:  dtheta/dt = omega_0 + omega + Kp*Vq     (eq 1)
                  domega/dt = Ki*Vq                       (eq 2)
     Returns theta, omega and one residual per equation."""
@@ -92,5 +90,10 @@ def compute_theta_omega(model, t_query, branch, Vq, omega_nominal=None, residual
         Vq = vq_from_prediction(branch, theta, t_query)
     elif residual != "eq4":
         raise ValueError(f"residual must be 'eq4' or 'eq6', got {residual!r}")
-    return {"theta": theta, "omega": omega, "res_theta": dtheta_dt - omega - Kp * Vq - omega_0, "res_omega": domega_dt - Ki * Vq}                      
+    u = omega + Kp * Vq
+    s = saturate(u, limit, beta)
+    # Kaw = Ki/Kp, derived from the SAME per-run tensors the rest of the residual
+    # uses, so it is automatically right on a gains family.
+    aw = 0.0 if limit is None else (Ki / Kp) * (s - u)
+    return {"theta": theta, "omega": omega, "res_theta": dtheta_dt - s - omega_0, "res_omega": domega_dt - Ki * Vq - aw}                      
         

@@ -166,6 +166,11 @@ if __name__ == "__main__":
     p.add_argument("--F", type=int, default=None)
     p.add_argument("--max_freq", type=float, default=None)
     p.add_argument("--hidden_dim", type=int, default=None)
+    p.add_argument("--n_layers", type=int, default=None,
+                   help="interior DEPTH of both nets; default 2 reproduces the YAML")
+    p.add_argument("--width", type=int, default=None,
+                   help="interior WIDTH of both nets; default 64. Distinct from "
+                        "--hidden_dim, which sets the LATENT contraction width")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--split_seed", type=int, default=0)
     p.add_argument("--epochs", type=int, default=800)
@@ -193,4 +198,5 @@ if __name__ == "__main__":
                batch_size=a.batch_size, patience=a.patience, seed=a.seed,
                split_seed=a.split_seed, F=a.F, max_freq=a.max_freq, hidden_dim=a.hidden_dim,
                device=a.device or T.DEVICE, n_eval_runs=a.n_eval_runs,
-               results_dir=a.results_dir, arch=a.arch, residual=a.residual)
+               results_dir=a.results_dir, arch=a.arch, residual=a.residual,
+               n_layers=a.n_layers, width=a.width)

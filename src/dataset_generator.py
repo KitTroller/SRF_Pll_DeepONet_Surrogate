@@ -195,7 +195,7 @@ class Dataset_Creator():
             # value to record. None is the honest answer; the ranges live under "gains".
             "Kp": None if torch.is_tensor(ph.Kp) else float(ph.Kp),
             "Ki": None if torch.is_tensor(ph.Ki) else float(ph.Ki),
-            "omega_0": float(ph.omega_0),
+            "omega_0": float(ph.omega_0), "freq_limit": None if ph.freq_limit is None else float(ph.freq_limit), "limit_beta": float(ph.limit_beta), "limit_kaw": float(ph.limit_kaw),
             "v_nominal": float(ph.v_nominal),
             "noise_amplitude": float(ph.noise_amplitude),
             "columns": ["initial_grid_angle", "frequency_offset", "amplitude_offset", "theta_pll", "omega_pll"],

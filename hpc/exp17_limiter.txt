@@ -1,0 +1,167 @@
+# exp17 -- Siemens frequency limiter, plus the first real test of network capacity.
+#
+# THE LIMITER.  dtheta/dt is clamped to omega_0 +/- 2*pi*3 = 18.8496 rad/s (47-53 Hz),
+# via a softplus-rounded two-ReLU clamp with back-calculation anti-windup whose gain is
+# DERIVED as Ki/Kp -- a constant would be wrong on every gains run (Ki/Kp spans 2..60)
+# and being wrong there costs ~0.1-0.3 rad, a thousand times the model error.
+#
+# VERIFIED BEFORE SUBMITTING:
+#   * freq_limit=None reproduces the existing trapezoid to 8.2e-13 rad
+#   * the repo's _integrator_step_limited agrees with an independently written
+#     implementation to 3.1e-11 rad, and differs from the unlimited path by 0.59 rad,
+#     so the clamp is demonstrably firing rather than silently absent
+#   * the residual accepts the limit, stays finite and backprops through the clamp
+#   * beta = 0.05 sits 4x BELOW the deployed theta RMS, so it is fixed, not swept
+#   * Newton converges in 3.0 iterations per step
+#
+# UNITS MATTER HERE.  At 3 rad/s (the first reading) only 78% of the LHS box locks
+# inside 0.5 s and 50% of samples saturate. At 2*pi*3 it is 100% and 2.6%. The IC box
+# needs no change at 2*pi*3 -- confirm the units with the supervisor anyway.
+#
+# READ THE RESULTS CONDITIONALLY OR THEY WILL BE MEANINGLESS. Only 2.6% of samples
+# ever touch the clamp, so an aggregate theta RMS averages the limiter away entirely
+# and every arm below will look identical. Split by "did this window saturate", the
+# way fault_split.py splits by fault kind.
+#
+# ARMS
+#   famN  limited, n=5000,  fixed gains     W40 W20     famR is its UNLIMITED twin,
+#   famO  limited, n=5000,  gains inputs    W40 W20     generated at the same
+#   famP  limited, n=10000, fixed gains     W40 W20     --lhs_seed 21. The limiter lives
+#   famQ  limited, n=10000, gains inputs    W40 W20     after _grid_phases, so famN and
+#   famR  UNLIMITED, n=5000, fixed gains    W40         famR share Va/Vb/Vc bit-exactly
+#                                                       -- a properly paired control.
+#
+# CAPACITY GRID, on famN_W40 (limited) and famR_W40 (unlimited), 3x3 x 4 seeds each.
+# depth {2,3,4} x interior width {32,64,128}. These have NEVER been tested: F46 swept
+# `hidden_dim`, which only rewrites sizes[-1] -- the LATENT contraction width -- and
+# leaves the interior 64s untouched. So "capacity is not the binding constraint" was
+# only ever measured on the latent dimension.
+#
+# The (2,64) cell is the current default and is included in the grid deliberately, so
+# all nine cells are scored under identical treatment in one directory rather than
+# against a baseline that lives elsewhere and was run without the flags.
+#
+# JUDGE THESE ON `compounding` AND `rollout_full_rms`, NOT `val_th`. F46's own result
+# was flat on val_th and moved 1.7x on compounding (5.9 at h32 -> 3.4 at h128): width
+# buys handover stability, not operator quality. Scoring the grid on val_th would
+# reproduce a null by construction.
+#
+# w32 is 20,896 params against the default's 45,696. If it ties, parameter count is not
+# the mechanism -- and a model half the size is worth having on its own, against a
+# paper whose network is 450 parameters hand-coded into FORTRAN.
+#
+# GENERATE FIRST:
+#   python hpc/generate_family.py --stem famN --n_runs 5000  --W 20 40 --lhs_seed 21 --freq_limit 18.8496
+#   python hpc/generate_family.py --stem famO --n_runs 5000  --W 20 40 --lhs_seed 22 --freq_limit 18.8496 --gains
+#   python hpc/generate_family.py --stem famP --n_runs 10000 --W 20 40 --lhs_seed 23 --freq_limit 18.8496
+#   python hpc/generate_family.py --stem famQ --n_runs 10000 --W 20 40 --lhs_seed 24 --freq_limit 18.8496 --gains
+#   python hpc/generate_family.py --stem famR --n_runs 5000  --W 40    --lhs_seed 21
+
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famN_W40
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famN_W40
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famN_W40
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famN_W40
+--dataset famN_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famN_W20
+--dataset famN_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famN_W20
+--dataset famN_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famN_W20
+--dataset famN_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famN_W20
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famO_W40
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famO_W40
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famO_W40
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famO_W40
+--dataset famO_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famO_W20
+--dataset famO_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famO_W20
+--dataset famO_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famO_W20
+--dataset famO_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famO_W20
+--dataset famP_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famP_W40
+--dataset famP_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famP_W40
+--dataset famP_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famP_W40
+--dataset famP_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famP_W40
+--dataset famP_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famP_W20
+--dataset famP_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famP_W20
+--dataset famP_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famP_W20
+--dataset famP_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famP_W20
+--dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famQ_W40
+--dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famQ_W40
+--dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famQ_W40
+--dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famQ_W40
+--dataset famQ_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famQ_W20
+--dataset famQ_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famQ_W20
+--dataset famQ_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famQ_W20
+--dataset famQ_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famQ_W20
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famR_W40
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famR_W40
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famR_W40
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famR_W40
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 2 --width 32 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 2 --width 32 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 2 --width 32 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 2 --width 32 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 2 --width 64 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 2 --width 64 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 2 --width 64 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 2 --width 64 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 2 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 2 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 2 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 2 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 3 --width 32 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 3 --width 32 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 3 --width 32 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 3 --width 32 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 3 --width 64 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 3 --width 64 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 3 --width 64 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 3 --width 64 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 3 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 3 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 3 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 3 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 4 --width 32 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 4 --width 32 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 4 --width 32 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 4 --width 32 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 4 --width 64 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 4 --width 64 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 4 --width 64 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 4 --width 64 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 4 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 4 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 4 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 4 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 2 --width 32 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 2 --width 32 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 2 --width 32 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 2 --width 32 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 2 --width 64 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 2 --width 64 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 2 --width 64 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 2 --width 64 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 2 --width 128 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 2 --width 128 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 2 --width 128 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 2 --width 128 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 3 --width 32 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 3 --width 32 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 3 --width 32 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 3 --width 32 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 3 --width 64 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 3 --width 64 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 3 --width 64 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 3 --width 64 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 3 --width 128 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 3 --width 128 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 3 --width 128 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 3 --width 128 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 4 --width 32 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 4 --width 32 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 4 --width 32 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 4 --width 32 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 4 --width 64 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 4 --width 64 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 4 --width 64 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 4 --width 64 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 4 --width 128 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 4 --width 128 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 4 --width 128 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 4 --width 128 --results_dir sweeps_famR_W40_cap

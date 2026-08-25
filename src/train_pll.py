@@ -119,7 +119,7 @@ def assemble_batch(batch, t_local, mu, sd):  # DO NOT READ UNUSED should be dele
     # print(f"Shapes are: branch: {branch.shape}, t_query: {t_query.shape}, Vq: {Vq.unsqueeze(-1).shape}, target_theta: {target_theta.unsqueeze(-1).shape}, target_omega: {target_omega.unsqueeze(-1).shape}")
     return branch, t_query, Vq.unsqueeze(-1), target_theta.unsqueeze(-1), target_omega.unsqueeze(-1)
 
-def run_epoch(model, tensors, n, t_local, w_omega, w_phys, s1, s2, batch_size, optimizer=None, device="cpu", residual="eq4"):
+def run_epoch(model, tensors, n, t_local, w_omega, w_phys, s1, s2, batch_size, optimizer=None, device="cpu", residual="eq4", limit=None, beta=0.05):
     is_train = optimizer is not None
     model.train(is_train)
     tot = {"theta": 0.0, "omega": 0.0, "r1": 0.0, "r2": 0.0, "phys": 0.0, "total": 0.0}    
@@ -130,7 +130,8 @@ def run_epoch(model, tensors, n, t_local, w_omega, w_phys, s1, s2, batch_size, o
         # (B,1,1) so they broadcast against Vq (B,T,1). When the dataset has no gains
         # these columns are filled with the YAML scalars, so the maths is identical.
         out  = compute_theta_omega(model, t_query, branch, Vq.unsqueeze(-1), omega_nominal=0.0,
-                                   residual=residual, Kp=kp.view(-1, 1, 1), Ki=ki.view(-1, 1, 1))
+                                   residual=residual, Kp=kp.view(-1, 1, 1), Ki=ki.view(-1, 1, 1),
+                                   limit=limit, beta=beta)
         l_th = nn.functional.mse_loss(out["theta"], tth.unsqueeze(-1))
         l_om = nn.functional.mse_loss(out["omega"], tom.unsqueeze(-1))
         # each residual divided by the RMS of the terms it is BUILT from, so both
@@ -168,7 +169,7 @@ def load_checkpoint(path, device="cpu"):
 ARCHS = {"deeponet": Unstacked_DeepONet, "pinn": Single_PINN}
 
 
-def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=512, val_frac=0.15, patience=20, seed=0, split_seed=0, F=None, out=None, device=DEVICE, n_eval_runs=20, results_dir="sweeps", runs_dir="runs", max_freq=None, hidden_dim=None, arch="deeponet", residual="eq4"):
+def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=512, val_frac=0.15, patience=20, seed=0, split_seed=0, F=None, out=None, device=DEVICE, n_eval_runs=20, results_dir="sweeps", runs_dir="runs", max_freq=None, hidden_dim=None, arch="deeponet", residual="eq4", n_layers=None, width=None):
     torch.manual_seed(seed)
     data, meta = Dataset_Creator.load_dataset(dataset)
     prep = prepare(data, deviation=True)
@@ -203,16 +204,26 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
     n_tr, n_va = int(tr.sum()), int(va.sum())
     t_local = prep["t_local"].to(device)
 
+    # The limiter comes from the DATA, never from the YAML. A residual that disagrees
+    # with the dataset enforces the wrong ODE on every saturated sample and fails
+    # quietly -- the same trap as training on a gains dataset with fixed Kp/Ki.
+    lim, lbeta = meta.get("freq_limit"), meta.get("limit_beta", 0.05)
+    if lim is not None:
+        print(f"frequency limiter ON: |dtheta/dt - omega_0| <= {lim:g} rad/s  (beta={lbeta:g})")
     ov = {"S_win": meta["S"], "n_extra": 2 if has_gains else 0}
     if F is not None:
         ov["F"] = F
     if max_freq is not None: ov["max_freq"] = max_freq
     if hidden_dim is not None: ov["hidden_dim"] = hidden_dim
+    if n_layers is not None: ov["n_layers"] = n_layers
+    if width is not None: ov["width"] = width
     model = ARCHS[arch](ov=ov).to(device)
 
     
     tag = (f"{Path(dataset).stem}_n{meta['n_runs']}_W{meta['W']}_F{model.F}" f"_mf{model.max_freq:g}_wp{w_phys:g}_s{seed}sp{split_seed}"
            + (f"_h{hidden_dim}" if hidden_dim is not None else "")
+           + (f"_L{n_layers}" if n_layers is not None else "")
+           + (f"_w{width}" if width is not None else "")
            + ("" if arch == "deeponet" else f"_{arch}")
            + ("" if residual == "eq4" else f"_{residual}")
            + ("_g" if has_gains else ""))
@@ -233,8 +244,8 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
     history = {"train": [], "val": []}
     status = "ok"
     for ep in range(1, epochs + 1):
-        trm = run_epoch(model, tr_t, n_tr, t_local, w_omega, w_phys, s1, s2, batch_size, opt, device, residual)
-        vam = run_epoch(model, va_t, n_va, t_local, w_omega, w_phys, s1, s2, batch_size, None, device, residual)
+        trm = run_epoch(model, tr_t, n_tr, t_local, w_omega, w_phys, s1, s2, batch_size, opt, device, residual, lim, lbeta)
+        vam = run_epoch(model, va_t, n_va, t_local, w_omega, w_phys, s1, s2, batch_size, None, device, residual, lim, lbeta)
         if (not np.isfinite(vam["total"])) or (ep > 3 and vam["total"] > 50 * best):
             status = "diverged"
             print(f"[{tag}] DIVERGED at epoch {ep}: val total {vam['total']:.3e} "
@@ -263,6 +274,7 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
            "F": model.F, "max_freq": model.max_freq, "w_phys": w_phys,
            "seed": seed, "split_seed": split_seed, "lr": lr,
            "arch": arch, "residual": residual, "gains": bool(has_gains),
+           "freq_limit": lim, "n_layers": n_layers, "width": width,
            "params": sum(p.numel() for p in model.parameters()),
            "batch_size": batch_size, "device": str(device),
            "n_eval_runs": n_eval_runs,

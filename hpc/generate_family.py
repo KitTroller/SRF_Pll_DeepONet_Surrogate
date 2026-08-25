@@ -57,6 +57,9 @@ def main():
                         "the EMT co-simulation never leaves |omega| < 0.15, and only 6.8%% "
                         "of our windows are in that band -- a narrow model is a specialist "
                         "for warm co-simulation, not a replacement for the wide one")
+    p.add_argument("--freq_limit", type=float, default=None,
+                   help="Siemens frequency limiter: clamp dtheta/dt to omega_0 +/- this "
+                        "many rad/s. Omit for no limiter")
     a = p.parse_args()
 
     # Override in memory rather than editing the YAMLs. Editing them would change the
@@ -90,6 +93,8 @@ def main():
             # differs. That makes a gain-box comparison PAIRED instead of two independent
             # draws, which is most of the reason this batch can use 4 seeds and not 16.
             DG.initial_conditions_config.disturbances.enabled = False
+        if a.freq_limit is not None:
+            PS.pll_constants.Pll.freq_limit = a.freq_limit
 
     # The guard MUST test the path save_dataset actually writes to. After the src/data
     # reorg, `save_dataset` resolves a bare name through paths.data() into data/, so a

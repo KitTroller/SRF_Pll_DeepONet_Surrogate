@@ -7,3 +7,11 @@ Pll:
   frequency_noise: 0.2  # hz not used now
 sensors: 5000
 time_window: 0.5
+
+# Siemens request: the PLL frequency is limited to 47-53 Hz, i.e. dtheta/dt within
+# omega_0 +/- 2*pi*3 = 18.8496 rad/s. NOTE the units: 3 Hz, not 3 rad/s -- at 3 rad/s
+# only 78% of the LHS box still locks inside 0.5 s, at 2*pi*3 it is 100%.
+freq_limit : null
+limit_beta: 0.05 # the clamp essentially hapens with 2 ReLU 1 normal, one inversed , to soften the corners for the derivative to be continuous we have this parameter determines the softness, max clamp error is beta*ln2 = 0.035
+# no limit_kaw key: the back-calculation gain is DERIVED as Ki/Kp so it stays correct
+# when Kp and Ki are per-run inputs (Ki/Kp spans 2..60 on a gains family).

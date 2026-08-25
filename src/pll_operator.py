@@ -40,8 +40,21 @@ class Unstacked_DeepONet(nn.Module):
         else:
             self.hidden_dim = ov.get("hidden_dim", model_config.hidden_dim)
             self.output_dim = ov.get("output_dim", model_config.output_dim)
-            self.branch_sizes = list(model_config.sizes.branch_net)
-            self.trunk_sizes  = list(model_config.sizes.trunk_net)
+            # n_layers moves DEPTH only; the interior width stays at the YAML value.
+            # Note `hidden_dim` does NOT do this -- it only rewrites sizes[-1], i.e. the
+            # latent contraction width, so F46 measured the latent dim and never the
+            # network width or depth. n_layers=2 rebuilds [1,64,64,64] exactly.
+            nl, wd = ov.get("n_layers", None), ov.get("width", None)
+            if nl is None and wd is None:
+                self.branch_sizes = list(model_config.sizes.branch_net)
+                self.trunk_sizes  = list(model_config.sizes.trunk_net)
+            else:
+                nl = 2 if nl is None else nl                       # YAML default depth
+                w = list(model_config.sizes.trunk_net)[1] if wd is None else wd
+                self.trunk_sizes  = [model_config.sizes.trunk_net[0]]  + [w] * nl + [w]
+                self.branch_sizes = [model_config.sizes.branch_net[0]] + [w] * nl + [w]
+            # sizes[-1] is overwritten below by hidden_dim, so the LATENT dimension stays
+            # independent of `width` -- the three capacity axes stay separable.
             self.max_freq   = ov.get("max_freq", model_config.max_fourier_feat_frequency)
             self.W = initial_conditions_config.Windows
             self.S = PLL_Constants.sensors

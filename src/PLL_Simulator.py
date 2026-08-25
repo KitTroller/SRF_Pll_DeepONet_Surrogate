@@ -2,6 +2,7 @@ from omegaconf import OmegaConf
 import numpy as np
 import torch
 from pathlib import Path
+import torch.nn.functional as _F
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"   # src/ -> root
 pll_constants = OmegaConf.load(CONFIG_DIR / "PLL_Constants.yml")
@@ -10,6 +11,19 @@ initial_conditions_config = OmegaConf.load(CONFIG_DIR / "initial_conditions.yml"
 torch.manual_seed(0)
 torch.set_default_dtype(torch.float64)
 
+def saturate(u, L, beta):
+    """Soft clamp to +/-L. beta -> 0 is the exact two-ReLU clamp u - relu(u-L) + relu(-u-L);
+    softplus only rounds the corner, so the linear region stays exact to ~1e-27 (tanh, my initial idea, is
+    off by 12% at u=2). L=None disables it entirely."""
+    if L is None:
+        return u
+    return u - _F.softplus(u - L, beta=1 / beta) + _F.softplus(-u - L, beta= 1 / beta)
+def dsaturate(u, L, beta):
+    """d saturate/du -- Newton's Jacobian needs it, and it is what makes a hard clamp
+    unusable here: this slides 1 -> 0 over beta instead of being discontinuous near ReLU(0). Derivative of softplus is sigmoid, hzzah"""
+    if L is None:
+        return torch.ones_like(u)
+    return 1.0 - torch.sigmoid((u - L) / beta) - torch.sigmoid((-u - L) / beta)
 
 class PhysicsEquations():
     def __init__(self, pll_constants=pll_constants):
@@ -22,6 +36,10 @@ class PhysicsEquations():
         self.time_window = pll_constants.time_window
         self.noise_amplitude = pll_constants.Pll.noise_amplitude
         self.frequency_noise = pll_constants.Pll.frequency_noise
+        
+        # Siemens clamping request
+        self.freq_limit = pll_constants.get("freq_limit", None)
+        self.limit_beta = pll_constants.get("limit_beta", 0.05)
 
     def park_dqTransform(self, Va, Vb, Vc, theta_pll):
         """Va, Vb, Vc are grid phase voltages and theta_pll is the angle estimate of the PLL, returns the dq coordinates. Also we pick vq with minus sign in front convention"""
@@ -84,6 +102,52 @@ class PLLSimulator():
         Vd, Vq = self.physics.park_dqTransform(Va_k, Vb_k, Vc_k, theta)
         omega_k = omega_prev + dt/2 * Ki * (Vq_prev + Vq)
         return theta, omega_k, Vd, Vq
+    
+    def _integrator_step_limited(self, theta_prev, omega_prev, Vq_prev, Va_k, Vb_k, Vc_k, max_iters=10, tol = 1e-10):
+        """Trapezoid with a frequency limiter:
+               u      = omega + Kp*Vq
+               dth/dt = omega_0 + sat(u)
+               dom/dt = Ki*Vq + Kaw*(sat(u) - u)      this is back-calculation anti-windup
+
+        theta and omega can NO LONGER be eliminated into one scalar Newton the way
+        `_integrator_step_trapezoid` does, because omega_k feeds sat() which feeds
+        theta_k. So this iterates the pair. The cross-coupling is O(dt^2) around 1e-6 here,
+        so it contracts almost immediately -- verified against the unlimited path at
+        8.2e-13 rad when freq_limit is None.
+
+        In the linear region sat(u) = u and sat(u) - u = 0, so this reduces to
+        the ordinary PI which is why L=None is exactly the same with every existing
+        dataset."""
+        dt, physics = self.dt, self.physics
+        Kp, Ki, w0 = physics.Kp, physics.Ki, physics.omega_0
+        L, beta = physics.freq_limit, physics.limit_beta
+       
+        Kaw = Ki / Kp
+
+        u_p = omega_prev + Kp * Vq_prev
+        s_p = saturate(u_p, L, beta)
+
+        known_theta = theta_prev + (dt/2) * (w0 + s_p + w0)
+       
+        known_omega = omega_prev + (dt/2) * (Ki * Vq_prev + Kaw * (s_p - u_p))
+
+        theta = theta_prev + dt * (w0 + s_p)
+        omega = omega_prev.clone()
+
+        for it in range(1, max_iters + 1):
+            Vd, Vq = physics.park_dqTransform(Va_k, Vb_k, Vc_k, theta)
+            u = omega + Kp * Vq
+            F = theta - known_theta - (dt / 2) * saturate(u, L, beta)
+            dF = 1.0 + (dt / 2) * dsaturate(u, L, beta) * Kp * Vd   # dVq/dtheta = -Vd
+            step = F / dF
+            theta = theta - step
+            Vd, Vq = physics.park_dqTransform(Va_k, Vb_k, Vc_k, theta)
+            u = omega + Kp * Vq
+            omega = known_omega + (dt / 2) * (Ki * Vq + Kaw * (saturate(u, L, beta) - u))
+            if step.abs().max() < tol:      # the pair contracts in ~2 passes; running the
+                break                       # full 10 every step made generation 5x slower
+        self.newton_iters.append(it)
+        return theta, omega, Vd, Vq
     
     def higher_harmonics_noise(self, n_runs, t, omega_g, init_phase):
         h5_amplitude = 0.015 * torch.rand(n_runs, 1) + 0.015  # amplitude range: 1.5% - 3%
@@ -174,9 +238,12 @@ class PLLSimulator():
         for k in range(1, N):
             if scheme == "forward":
                 th, om, vd, vq = self._integrator_step(theta[:, k - 1], omega[:, k - 1], Va[:, k - 1], Vb[:, k - 1], Vc[:, k - 1])
+            elif self.physics.freq_limit is not None:
+                th, om, vd, vq = self._integrator_step_limited(theta[:, k - 1], omega[:, k - 1], Vq[:, k - 1], Va[:, k], Vb[:, k], Vc[:, k])
             else:
                 th, om, vd, vq = self._integrator_step_trapezoid(theta[:, k - 1], omega[:, k - 1], Vq[:, k - 1], Va[:, k], Vb[:, k], Vc[:, k])
             theta[:, k], omega[:, k], Vd[:, k], Vq[:, k] = th, om, vd, vq
+
         return theta, omega, Vd, Vq, Valpha, Vbeta
     
     
