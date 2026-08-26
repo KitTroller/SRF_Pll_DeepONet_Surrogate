@@ -253,6 +253,7 @@ draw different minibatch orders from the same seed.
 | figure | decides |
 |---|---|
 | `01`–`06` | dataset and simulator sanity; prediction vs truth; error by window; residual budget |
+| `07` | the `w_phys` sweep on the legacy n=1000 family — **superseded by `14`**, which repeats it on famB. Kept because it spans a wider `w_phys` range |
 | `10` | Fourier arms — `F` and `max_freq` |
 | `11` | window length `W` |
 | `12` | head-to-head vs the paper's own network |
