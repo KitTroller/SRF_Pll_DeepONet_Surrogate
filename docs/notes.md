@@ -1678,6 +1678,26 @@ part of the 2.12x on famN and does nothing on famR, that is a clean mechanistic 
 of the famN/famR pair -- one generate plus 8 jobs. Worth doing before the 2.12x is
 quoted anywhere load-bearing.
 
+**DOES THE SURROGATE HONOUR THE CONSTRAINT?** Siemens specified a hard limit, so this is
+a compliance question, not an accuracy one -- and `graphs/25` (top right) answers it: the
+truth's `dtheta/dt - omega_0` sits FLAT at 18.85 while clamped, and the surrogate sits on
+top of it. It learned the flat top from data plus the residual, never having been told
+about the clamp explicitly. Measured over 48 runs by numerically differentiating the
+predicted angle:
+
+| | |
+|---|---|
+| samples outside the band, median run | **0.00%** |
+| samples outside, worst run | 8.98% |
+| peak abs freq vs the limit, median run | **37% BELOW it** |
+| worst excursion beyond the limit | **+1.18 rad/s = 6.25% of L** |
+
+Most runs never approach the band at all, which matches only ~25% of runs saturating.
+**CAVEAT, resolve before quoting the 6.25%**: `np.gradient` on a predicted angle amplifies
+noise, and the truth's own numerically-differentiated frequency has not been measured the
+same way. If the truth shows comparable excursions the 6.25% is mostly artefact. Cheap to
+check, and it is the number Siemens will ask about first.
+
 Score the grid on `compounding` / `rollout_full_rms`, and on famN condition it on
 saturation exactly as above, or the 4% will average the answer away again (F63).
 

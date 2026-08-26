@@ -81,6 +81,13 @@ gen famP "40"    --n_runs 10000 --lhs_seed 23 --freq_limit $L          || exit 1
 gen famQ "40"    --n_runs 10000 --lhs_seed 24 --freq_limit $L --gains  || exit 1
 gen famR "40"    --n_runs 5000  --lhs_seed 21                          || exit 1
 
+# Second LHS draw of the famN/famR pair. The 2.12x in F65 is one draw each, so it cannot
+# separate "the limiter costs 2.12x" from "these two families happened to differ". famS
+# and famT repeat it at --lhs_seed 25; agreement across draws is what makes the number
+# quotable.
+gen famS "40"    --n_runs 5000  --lhs_seed 25 --freq_limit $L          || exit 1
+gen famT "40"    --n_runs 5000  --lhs_seed 25                          || exit 1
+
 echo "done:"
-ls -la data/fam[NOPQR]_W*.npz
+ls -la data/fam[NOPQRST]_W*.npz
 getquota_zhome.sh 2>/dev/null

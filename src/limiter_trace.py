@@ -83,13 +83,28 @@ def main():
             for k in np.where(sat)[0]:
                 ax[row, c].axvspan(k * S * DT, (k + 1) * S * DT, color="tab:red", alpha=.13, lw=0)
 
-        ax[0, c].plot(t, u[r].numpy(), "k", lw=.9)
+        # THE panel: the frequency the PLL actually produces, dtheta/dt - omega_0.
+        # `u` dashed is what the PI *wanted*; the gap between them IS the limiter acting.
+        # The surrogate curve answers the question Siemens actually asked -- does the
+        # SURROGATE honour the limit, or only the solver it was trained on?
+        f_true = np.gradient(th_t[r].numpy(), DT) - OMEGA_BASE
+        f_pred = np.gradient(pth, DT) - OMEGA_BASE
+        ax[0, c].plot(t, u[r].numpy(), color="grey", ls="--", lw=.8, label="$u$, PI output (unclamped)")
+        ax[0, c].plot(t, f_true, "k", lw=1.1, label="truth $d\\theta/dt-\\omega_0$")
+        ax[0, c].plot(t, f_pred, "tab:blue" if c == 0 else "tab:red", lw=.9, alpha=.85,
+                      label="surrogate $d\\theta/dt-\\omega_0$")
         if L:
-            ax[0, c].axhline(L, color="tab:red", ls="--", lw=1.2)
-            ax[0, c].axhline(-L, color="tab:red", ls="--", lw=1.2)
-            ax[0, c].text(0.42, L * 1.08, "clamp $\\pm$18.85 rad/s", color="tab:red", fontsize=8)
+            ax[0, c].axhline(L, color="tab:red", ls=":", lw=1.4)
+            ax[0, c].axhline(-L, color="tab:red", ls=":", lw=1.4)
+            ax[0, c].text(0.30, L * 1.05, "clamp $\\pm 2\\pi\\cdot 3$ = 18.85 rad/s",
+                          color="tab:red", fontsize=8)
+            over = 100 * np.mean(np.abs(f_pred) > L * 1.02)
+            ax[0, c].text(.985, .06, f"surrogate outside the band: {over:.1f}% of samples",
+                          transform=ax[0, c].transAxes, ha="right", fontsize=8.5,
+                          bbox=dict(fc="#ffe9c7", ec="none", pad=3))
         ax[0, c].set_title(name, fontsize=11)
-        ax[0, c].set_ylabel("$u=\\omega+K_p V_q$ [rad/s]")
+        ax[0, c].set_ylabel("frequency dev. [rad/s]")
+        ax[0, c].legend(fontsize=7.5, loc="upper right", ncol=1)
 
         ax[1, c].plot(t, th_t[r].numpy() - ramp, "k", lw=2.2, label="truth (trapezoid)")
         ax[1, c].plot(t, pth - ramp, "tab:blue" if c == 0 else "tab:red", lw=1.1,
