@@ -198,6 +198,22 @@ where a flag overrides it.
 | `famK_W{20,40}` | 5000 | 5000 / 100 µs | **±2** | **yes** | yes | `generate_family.py --stem famK --W 20 40 --n_runs 5000 --gains --omega_range 2` |
 | `famL_W{20,40}` | 5000 | 5000 / 100 µs | ±20 | **yes** | **no** | `generate_family.py --stem famL --W 20 40 --n_runs 5000 --gains --no_faults --lhs_seed 11` |
 | `famM_W{20,40}` | 5000 | 5000 / 100 µs | ±20 | **yes, trimmed** | **no** | `generate_family.py --stem famM --W 20 40 --n_runs 5000 --gains --no_faults --lhs_seed 11 --kp_range 18 45 --ki_range 180 520` |
+| `famN_W{20,40}` | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famN --W 20 40 --n_runs 5000 --lhs_seed 21 --freq_limit 18.8496` |
+| `famO_W{20,40}` | 5000 | 5000 / 100 µs | ±20 | **yes** | yes | `generate_family.py --stem famO --W 20 40 --n_runs 5000 --lhs_seed 22 --freq_limit 18.8496 --gains` |
+| `famP_W40` | **10000** | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famP --W 40 --n_runs 10000 --lhs_seed 23 --freq_limit 18.8496` |
+| `famQ_W40` | **10000** | 5000 / 100 µs | ±20 | **yes** | yes | `generate_family.py --stem famQ --W 40 --n_runs 10000 --lhs_seed 24 --freq_limit 18.8496 --gains` |
+| `famR_W40` | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famR --W 40 --n_runs 5000 --lhs_seed 21` |
+| `famS_W40` / `famT_W40` | 5000 | 5000 / 100 µs | ±20 | no | yes | as famN / famR but `--lhs_seed 25` — the second draw of the pair |
+
+`famN`–`famT` are the **frequency-limiter** families (branch `Siemens_Request`, `exp17`);
+everything above them is unlimited. Note the seeds: **famN and famR share `--lhs_seed 21`
+and differ only by `--freq_limit`**, and famS/famT repeat that pair at seed 25.
+
+**Why famR rather than famD as the unlimited control**, since the two are configured
+identically otherwise: famD is a *different LHS draw*, was generated on the laptop and
+never uploaded, and predates `--lhs_seed` so it can never be regenerated to match
+anything. famR exists so the limiter comparison is **paired** — same initial conditions,
+bit-identical `Va/Vb/Vc`, one difference.
 
 `famB` predates the disturbance work, so it has no faults — that is why it is the
 *hyperparameter* workhorse and `famD` is the deployed model. Gain ranges live under
@@ -237,7 +253,6 @@ draw different minibatch orders from the same seed.
 | figure | decides |
 |---|---|
 | `01`–`06` | dataset and simulator sanity; prediction vs truth; error by window; residual budget |
-| `09` | where the error lives in time |
 | `10` | Fourier arms — `F` and `max_freq` |
 | `11` | window length `W` |
 | `12` | head-to-head vs the paper's own network |
@@ -248,6 +263,10 @@ draw different minibatch orders from the same seed.
 | `19` | does a finer timestep buy anything (solver only) |
 | `20` | where the signal's power actually is — the DFT behind `max_freq` |
 | `21` | eq-4 vs eq-6 residual |
+| `22` | faults on/off and the gain-box width, on a common test set |
+| `23` | speed against accuracy for the four deliverable models |
+| `24` | what the **frequency limiter** costs, split by whether the window saturated |
+| `25` | one run solved with and without the limiter — and whether the surrogate honours the band |
 | `Tunable_Kp_Ki_tests/01`–`06` | the deliverable: model menu, θ/ω split, gain sensitivity, contenders, gain showcase |
 
 ### The three claims that need no caveat
