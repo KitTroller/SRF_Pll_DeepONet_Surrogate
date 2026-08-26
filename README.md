@@ -15,8 +15,11 @@ condition, so a 0.5 s trajectory is 40 handovers with no ground truth anywhere i
 > frequency to `omega_0 +/- 2*pi*3` rad/s (47-53 Hz) — a saturation on the PI output plus
 > back-calculation anti-windup, with the anti-windup gain derived as `Ki/Kp` so it stays
 > correct when the gains are network inputs. Everything below describes the **unlimited**
-> model and remains valid for it; the limiter's own results are `exp17` (F62-F64 in
-> `docs/notes.md`), running as of 2026-08-25. Generate a limited family with
+> model and remains valid for it; the limiter's own results are `exp17` (F62-F65 in
+> `docs/notes.md`). First verdict, F65: the limiter costs **2.12x even on runs where it
+> never fires**, 4.05x on clean windows downstream of one that did, and 22.2x on the
+> saturated windows themselves — while only 4% of windows saturate, so the aggregate
+> metric shows none of it. Generate a limited family with
 > `--freq_limit 18.8496`; omit it and every path is bit-identical to the unlimited one
 > (verified to 8.2e-13 rad).
 
@@ -450,6 +453,8 @@ intermediate, so a stale figure is always one command away from being correct. R
 | 20 | per-window and full-run spectra — where the residual energy sits | `python src/dft_spectrum.py` |
 | 22 | exp16: faults on/off and the gain box, on a common test set | `python src/exp16_report.py` |
 | 23 | **speed vs accuracy** for the four deliverable models — both trades on one axis | `python src/speed_accuracy.py` |
+| 24 | what the frequency limiter costs, split by whether the window saturated (**branch `Siemens_Request`**) | `python src/limiter_report.py` |
+| 25 | one run solved with and without the limiter, with the clamp visible (**branch `Siemens_Request`**) | `python src/limiter_trace.py` |
 | Tunable_Kp_Ki_tests/01-02 | model menu; theta and omega split | `python src/model_menu.py` |
 | Tunable_Kp_Ki_tests/03 | error across the whole `(Kp, Ki)` box, gains vs fixed | `python src/gain_sensitivity.py runs/<gains tag>.pth` |
 | Tunable_Kp_Ki_tests/04-06 | prediction vs truth per model (W=40, W=20), plus the gain showcase | `python src/contenders.py` |

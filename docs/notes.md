@@ -1618,6 +1618,69 @@ from 40 to 80, so the 0.5 s rollout now performs **twice as many handovers**. Co
 roughly doubles and cancels the per-window gain exactly. You cannot hold both the
 architecture and the handover count fixed while halving dt; exp6 chose architecture.
 
+### F65 — **WHAT THE LIMITER COSTS, DECOMPOSED.** `graphs/24`, `graphs/25`.
+famN vs famR, 4 seeds each, paired ICs. First results from `exp17`, 2026-08-25.
+
+famN and famR are the SAME family generated twice from `--lhs_seed 21`, with and without
+the limiter. **Both are fixed-gain** -- the tunable-gain limited families are famO/famQ --
+so this pair isolates the limiter and nothing else. The limiter acts inside the integrator,
+after `_grid_phases`, so `Va/Vb/Vc` are bit-identical and only the PLL trajectory differs.
+
+**The aggregate metric would have said the limiter is FREE.** Only **4.0% of windows**
+saturate, so a pooled theta RMS averages it away. Conditioning on saturation -- flagging
+each window by whether the TRUTH had `max|omega + Kp*Vq| > L` -- gives three separate
+costs, and they have three different causes:
+
+| group | n windows | median per-window theta RMS | vs famR |
+|---|---|---|---|
+| famR, no limiter | 1920 | 1.609e-4 | 1.00x |
+| famN, runs that **NEVER** saturate | 1440 | 3.409e-4 | **2.12x** |
+| famN, clean windows of runs that **DO** | 404 | 6.511e-4 | **4.05x** |
+| famN, **saturated** windows | 76 | 3.571e-3 | **22.20x** |
+
+**The 2.12x is the load-bearing number and it is a controlled comparison.** On the 36 of
+48 runs that never saturate, `sat(u) = u` throughout, so famN's ground truth is
+**bit-identical** to famR's -- same ICs, same waveform, same trajectory. Same data, same
+target, different training set, and famN is still twice as bad. That is a cost paid
+EVERYWHERE for the ability to represent a regime those runs never enter.
+
+**The extra 1.9x (4.05 vs 2.12) is handover contamination**, and the mechanism is
+measurable: the median first saturated window is **index 0 of 40**. A quarter of runs clip
+during acquisition, and every downstream window inherits the error through the recurrent
+state. This is the compounding mechanism the whole project exists to measure, showing up
+as a physics effect rather than a hyperparameter one.
+
+**22x on the saturated windows themselves** is the kink, and is unsurprising.
+
+`graphs/25` shows one run solved both ways. Two things worth seeing: while clamped, the
+true `theta` is an exact **straight ramp** (saturated segments are linear by construction,
+which is why the hard part is locating the switch, not representing the segments); and the
+angle looks completely ordinary in both columns -- the limiter is only visible in the `u`
+trace. **Caveat on that figure: the run is chosen as the MOST saturated for legibility,
+and on this particular run famR is the worse of the two.** It illustrates the mechanism,
+not the aggregate; the aggregate is the table above.
+
+**THE HYPOTHESIS NOW UNDER TEST, and its falsifier.** The 2.12x is *consistent* with the
+network being short on capacity -- it has to represent a piecewise target with the same
+45,696 parameters -- but three explanations fit equally well right now:
+
+1. capacity spent on the saturated regime, degrading the rest  <- what the grid tests
+2. the piecewise target is genuinely harder and no capacity fixes it
+3. a single-LHS-draw difficulty difference between the two families
+
+`exp17`'s capacity grid (depth {2,3,4} x width {32,64,128}, 4 seeds, on famN_W40 AND
+famR_W40) separates (1) from (2). **famR is the control**: if extra capacity helps both
+families it is not about the limiter at all, and F46/F55 predict famR should be flat
+because we are already within 1.02x of the solver we imitate. If depth or width recovers
+part of the 2.12x on famN and does nothing on famR, that is a clean mechanistic result.
+
+(3) is NOT addressed by anything currently running. Separating it needs a second LHS draw
+of the famN/famR pair -- one generate plus 8 jobs. Worth doing before the 2.12x is
+quoted anywhere load-bearing.
+
+Score the grid on `compounding` / `rollout_full_rms`, and on famN condition it on
+saturation exactly as above, or the 4% will average the answer away again (F63).
+
 ### F64 — **THE SIEMENS FREQUENCY LIMITER.** `exp17`, 100 jobs, submitted 2026-08-25.
 
 Siemens want the PLL to limit its own frequency: `dtheta/dt` must stay within
