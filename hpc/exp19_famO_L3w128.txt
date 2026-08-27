@@ -1,0 +1,26 @@
+# exp19 -- the cell exp18 could not know about. 4 jobs.
+#
+# exp18 picked famO's capacity cells from famN's results as they stood at the time:
+# L3_w64 (0.50x), L4_w64 (0.46x) and L2_w128 (0.65x). L3_w128 had not finished. It has
+# now, and it is famN's best cell by a distance:
+#
+#     famN   L3_w64 0.50x   L4_w64 0.46x   L2_w128 0.65x   L3_w128 **0.35x**
+#     famR   L3_w64 0.88x   L4_w64 0.94x   L2_w128 0.71x   L3_w128   0.73x  <- saturated
+#
+# famR is flat at w128 (0.71 -> 0.73) while famN keeps falling (0.65 -> 0.35), so depth
+# and width COMBINE on the piecewise target and do not on the smooth one. famO is limited
+# too, so its optimum is plausibly in the same corner -- and exp18 has no cell there.
+#
+# Goes into sweeps_famO_W40_cap alongside exp18's four, so the grid stays in one place.
+#
+# WALL TIME: L3_w128 measured 14.25 h at 4 cores in exp17, inside the 24 h limit. The
+# ordinary jobscript is fine; job_sweep_wide.sh is only needed for L4_w128.
+#
+# NOT QUEUED, deliberately: famO L4_w128, and anything at w256. famN's own L4_w128 is
+# still running, and until it lands we do not know whether famN turns over at depth 4 or
+# keeps improving. Queueing w256 now would be guessing which.
+
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_cap
