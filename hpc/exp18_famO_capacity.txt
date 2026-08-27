@@ -1,0 +1,74 @@
+# exp18 -- two jobs the branch cannot ship without. 24 jobs.
+#
+# PHASE 2, famS + famT (8 jobs): DOES F65 REPRODUCE ON A SECOND DRAW?
+#
+# F65's headline is "the limiter costs 2.12x even on runs where it never fires", measured
+# on famN vs famR. Both are ONE LHS draw (--lhs_seed 21), so that number cannot currently
+# distinguish "the limiter costs 2.12x" from "these two datasets happened to differ by
+# 2.12x". famS and famT repeat the identical experiment at --lhs_seed 25.
+#
+#   famS  limiter ON,  fixed gains, n=5000, W=40   <- famN's twin
+#   famT  limiter OFF, fixed gains, n=5000, W=40   <- famR's twin, same seed as famS
+#
+# Both at the DEFAULT architecture (L2_w64), because that is where the 2.12x was measured
+# and the comparison has to match. Analyse with src/limiter_report.py pointed at S/T.
+# If the ratio lands near 2.12x, F65 is quotable. If it does not, F65 gets retracted --
+# and it would be the seventh time a single-draw comparison turned out to be a draw
+# difference in this project.
+#
+# PHASE 3, famO capacity (16 jobs): DOES CAPACITY CLOSE THE GAINS PENALTY?
+#
+# famO is limiter + TUNABLE Kp/Ki, and is the most likely thing to actually be delivered.
+# It sits at 3.307e-3 against famN's 1.322e-3 -- a 2.50x gains penalty (F67).
+#
+# F66 showed depth is worth 2.0x on famN (limited, fixed gains) and only 1.1x on famR
+# (unlimited), because depth is what represents the clamp's kink. famO is ALSO limited, so
+# the prediction is that depth helps it by a similar 2x. If it does, the deliverable
+# should ship at L3_w64 or L4_w64, not at the L2_w64 every number in this repo was
+# measured at.
+#
+# NOT a full 3x3 grid: only the three cells that won on famN, plus L2_w64 so the grid is
+# self-contained in one directory rather than compared against a baseline that lives
+# elsewhere and was run without the flags.
+#
+#   L2_w64   45,696 params   the current default, and the control
+#   L3_w64   54,016          famN's 0.50x
+#   L4_w64   62,336          famN's 0.46x
+#   L2_w128 107,584          famN's 0.65x
+#
+# PRE-REGISTERED: L3_w64 and L4_w64 beat L2_w64 on famO by 1.7-2.2x, matching famN. If
+# they do not, depth helps the limiter's kink but NOT the two extra input dimensions, and
+# the gains penalty is a different problem needing a different lever.
+#
+# WALL TIME: measured from exp17's completed cells at 4 cores -- L3_w64 10.7 h,
+# L4_w64 16.2 h, L2_w128 14.5 h. All inside job_sweep.sh's 24 h, so the ordinary
+# jobscript is fine here; job_sweep_wide.sh is only needed for the w128 DEEP cells.
+#
+# SCORE ON compounding AND rollout_full_rms, not val_th (F63). famO's records are
+# comparable to each other -- one dataset, one split, architecture the only variable --
+# but NOT to famN's.
+
+--dataset famS_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famS_W40
+--dataset famS_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famS_W40
+--dataset famS_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famS_W40
+--dataset famS_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famS_W40
+--dataset famT_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famT_W40
+--dataset famT_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famT_W40
+--dataset famT_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famT_W40
+--dataset famT_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famT_W40
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 2 --width 64 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 2 --width 64 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 2 --width 64 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 2 --width 64 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 3 --width 64 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 3 --width 64 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 3 --width 64 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 3 --width 64 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 4 --width 64 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 4 --width 64 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 4 --width 64 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 4 --width 64 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 2 --width 128 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 2 --width 128 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 2 --width 128 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 2 --width 128 --results_dir sweeps_famO_W40_cap
