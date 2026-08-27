@@ -1618,6 +1618,41 @@ from 40 to 80, so the 0.5 s rollout now performs **twice as many handovers**. Co
 roughly doubles and cancels the per-window gain exactly. You cannot hold both the
 architecture and the handover count fixed while halving dt; exp6 chose architecture.
 
+### F67 — **exp17's physics block, and one result that contradicts F55.** All 4/4 seeds.
+
+Every family below is at the DEFAULT architecture (L2_w64), and each is scored on its
+OWN validation split. **Rows are therefore not comparable across families** -- different
+draws, and in the famR row different physics. This table is a record of what was run, not
+a set of verdicts; the honest cross-family numbers are F65 (limiter) and F66 (capacity).
+
+| family | limiter | gains | n_runs | `val_th` | `per_window_rms` | `rollout_full_rms` | comp |
+|---|---|---|---|---|---|---|---|
+| famR_W40 | no | no | 5000 | 1.447e-8 | 1.075e-4 | 3.973e-4 | 3.70 |
+| famN_W40 | **yes** | no | 5000 | 1.907e-7 | 3.725e-4 | 1.322e-3 | 3.46 |
+| famP_W40 | yes | no | **10000** | 1.216e-7 | 2.847e-4 | 1.011e-3 | 3.55 |
+| famO_W40 | yes | **yes** | 5000 | 1.178e-6 | 8.640e-4 | 3.307e-3 | 3.89 |
+| famQ_W40 | yes | **yes** | **10000** | 7.186e-7 | 6.939e-4 | 3.043e-3 | 4.26 |
+| famN_W20 | yes | no | 5000 | 2.790e-6 | 1.358e-3 | 2.873e-3 | 2.11 |
+| famO_W20 | yes | yes | 5000 | 1.353e-5 | 2.728e-3 | 6.105e-3 | 2.28 |
+
+**THE OPEN QUESTION: n=10000 appears to HELP under the limiter, and F55 said it does not.**
+famP beats famN by **1.31x** and famQ beats famO by **1.09x**. F55 measured 5000 -> 10000
+on the UNLIMITED problem and found no measurable improvement, so the natural reading is
+that the piecewise target is genuinely data-hungrier -- consistent with F66's finding that
+it is also capacity-hungrier.
+
+**But this is NOT established and must not be quoted yet.** famN uses `--lhs_seed 21` and
+famP uses 23; famO uses 22 and famQ uses 24. Every one of these comparisons is confounded
+with a different LHS draw, and it is the same class of confound that F65's 2.12x carries.
+Settling it needs famP regenerated at seed 21 -- one family, 4 jobs. Until then the
+honest statement is "consistent with the limiter being data-hungrier, not evidence of it".
+
+**The gains penalty under the limiter is large.** famO/famN = **2.50x** at W=40 and
+**2.13x** at W=20, against the ~2.5x measured on the unlimited problem (F57/F60). So the
+limiter does not appear to make tunable gains disproportionately worse -- but the same
+seed caveat applies, and no capacity grid has been run on famO or famQ, so it is unknown
+whether the deeper/wider networks close that gap the way they close famN's.
+
 ### F66 — **THE NETWORK WAS UNDER-PROVISIONED ALL ALONG.** `graphs/26`, `exp17` grid.
 7 of 9 cells complete at 4 seeds in both families, 2026-08-26.
 
