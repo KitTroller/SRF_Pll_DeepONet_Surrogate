@@ -1618,6 +1618,65 @@ from 40 to 80, so the 0.5 s rollout now performs **twice as many handovers**. Co
 roughly doubles and cancels the per-window gain exactly. You cannot hold both the
 architecture and the handover count fixed while halving dt; exp6 chose architecture.
 
+### F66 — **THE NETWORK WAS UNDER-PROVISIONED ALL ALONG.** `graphs/26`, `exp17` grid.
+7 of 9 cells complete at 4 seeds in both families, 2026-08-26.
+
+depth {2,3,4} x interior width {32,64,128} on two families that differ ONLY by the
+limiter -- **both fixed-gain**, same `--lhs_seed 21`. Within a panel one dataset and one
+validation split are shared and only the architecture moves, so the records are directly
+comparable; ACROSS panels they are not, and the honest cross-family number stays F65's.
+
+| cell | params | famN (limited) | famR (unlimited control) | ratio |
+|---|---|---|---|---|
+| L2_w32 | 20,896 | 1.84x | 2.21x | 1.20 |
+| L3_w32 | 23,008 | 1.09x | 1.63x | 1.50 |
+| L4_w32 | 25,120 | 0.69x | 1.41x | 2.04 |
+| **L2_w64** | 45,696 | **1.00x (default)** | **1.00x (default)** | 1.00 |
+| L3_w64 | 54,016 | **0.50x** | 0.88x | 1.78 |
+| L4_w64 | 62,336 | **0.46x** | 0.94x | 2.02 |
+| L2_w128 | 107,584 | 0.65x | 0.71x | 1.10 |
+
+**TWO SEPARATE EFFECTS, and only one of them is about the limiter.**
+
+**Width was ALWAYS a lever, including on the plain unlimited problem.** famR spans
+2.21x -> 0.71x across w32 -> w128, a factor of **3.1**, with no limiter and no gains. That
+is the same configuration family famB and famD live in. **The deployed model is very
+likely under-provisioned too**, and nothing in this project had tested it.
+
+**Depth is limiter-specific.** L2 -> L4 at w64 is worth **2.0x** on famN and **1.1x** on
+famR. The mechanism is visible in the sub-metrics: `per_window_rms` improves **2.6x** on
+famN against **1.23x** on famR, i.e. depth improves the OPERATOR on the piecewise target
+and barely touches the smooth one. That was the pre-registered hypothesis in F65, and
+famR is what makes it a mechanism rather than a coincidence.
+
+**Depth and width do OPPOSITE things to the handover.** Depth improves the operator and
+degrades compounding (famN 3.38 -> 4.11 from L2 to L4); width improves compounding (famR
+4.93 at w32 -> 3.93 at w128) and improves the operator less. Same shape as the `w_phys`
+trade in F54, on a different axis.
+
+**w32 is worse in BOTH families**, so the network carries no spare capacity at 64. The
+"halve the model so it embeds like the paper's 450-parameter net" idea is dead.
+
+**WHY THIS WAS MISSED FOR SO LONG.** F46 swept `hidden_dim` and found it flat, and the
+README generalised that to "capacity is not the binding constraint". But `hidden_dim`
+only ever rewrote `sizes[-1]` -- the latent contraction width (F63). The interior width
+and the depth had never been varied at all. The flat result was real and the
+generalisation was not.
+
+**STILL MISSING**: `L3_w128` (1 of 4 in each family) and `L4_w128` (0 of 4). Those are the
+cells the trend says should be best, and they are the ones that would show whether this
+saturates. 14 jobs running as array `limwide` at 8 cores. Timing from the completed
+cells: everything early-stops between 606 and 818 epochs, so L4_w128 at ~800 epochs is
+~17 h and fits the 24 h limit -- but at 1200 it would be ~26 h, so an unlucky long-running
+seed will be killed again. The first 8 failures were exactly this: SIGUSR2 at the wall
+limit, on the w128 arms, because the 24 h in `job_sweep.sh` was sized for the 45,696-param
+baseline and never re-checked when 2.4x-larger arms were added.
+
+**WHAT THIS DOES NOT SAY.** It does not say the deployed model should change today: every
+number in this repo was measured at L2_w64, and re-tuning capacity means re-measuring the
+knob table. It says the capacity claim in that table is wrong and the deployed model has
+headroom that was never explored.
+
 ### F65 — **WHAT THE LIMITER COSTS, DECOMPOSED.** `graphs/24`, `graphs/25`.
 famN vs famR, 4 seeds each, paired ICs. First results from `exp17`, 2026-08-25.
 

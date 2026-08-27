@@ -56,8 +56,20 @@ def tag_for(line):
     wp = float(get("--w_phys", 0.0))
     seed = int(get("--seed", 0))
     sp = int(get("--split_seed", 0))
-    return (f"{Path(ds).stem}_n{meta['n_runs']}_W{meta['W']}_F{F}"
-            f"_mf{mf:g}_wp{wp:g}_s{seed}sp{sp}"), get("--results_dir", "sweeps")
+    # The suffixes train_pll appends, in the SAME order. Without them every gains job
+    # (_g, since exp14) and every capacity job (_L, _w, since exp17) is reported as
+    # missing and a resubmit reruns work that is already done.
+    hd, nl, wd = get("--hidden_dim"), get("--n_layers"), get("--width")
+    arch, res = get("--arch", "deeponet"), get("--residual", "eq4")
+    tag = (f"{Path(ds).stem}_n{meta['n_runs']}_W{meta['W']}_F{F}"
+           f"_mf{mf:g}_wp{wp:g}_s{seed}sp{sp}"
+           + (f"_h{hd}" if hd else "")
+           + ("" if arch == "deeponet" else f"_{arch}")
+           + ("" if res == "eq4" else f"_{res}")
+           + ("_g" if meta.get("gains", {}).get("enabled") else "")
+           + (f"_L{nl}" if nl else "")
+           + (f"_w{wd}" if wd else ""))
+    return tag, get("--results_dir", "sweeps")
 
 
 if __name__ == "__main__":

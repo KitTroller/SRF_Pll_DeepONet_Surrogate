@@ -16,10 +16,14 @@ condition, so a 0.5 s trajectory is 40 handovers with no ground truth anywhere i
 > back-calculation anti-windup, with the anti-windup gain derived as `Ki/Kp` so it stays
 > correct when the gains are network inputs. Everything below describes the **unlimited**
 > model and remains valid for it; the limiter's own results are `exp17` (F62-F65 in
-> `docs/notes.md`). First verdict, F65: the limiter costs **2.12x even on runs where it
+> `docs/notes.md`). F65: the limiter costs **2.12x even on runs where it
 > never fires**, 4.05x on clean windows downstream of one that did, and 22.2x on the
 > saturated windows themselves — while only 4% of windows saturate, so the aggregate
-> metric shows none of it. Generate a limited family with
+> metric shows none of it. **F66** is the bigger surprise and is not limiter-specific:
+> interior **width** and **depth** had never been tested (`hidden_dim` only ever moved the
+> latent dimension), and neither is flat — width spans **3.1×** even on the plain
+> unlimited problem, so the deployed model has headroom nobody had looked for.
+> Generate a limited family with
 > `--freq_limit 18.8496`; omit it and every path is bit-identical to the unlimited one
 > (verified to 8.2e-13 rad).
 
@@ -70,7 +74,7 @@ Current headline (n_runs=5000, W=40, F=4, max_freq=503, w_phys=0.3, 6 seeds):
 
 That last row is the one worth pausing on: the operator adds **no independent error floor**.
 It reproduces its training solver to a constant relative accuracy at two different noise
-levels. Width, window length, Fourier frequency **and the timestep** are all saturated —
+levels. Window length, Fourier frequency **and the timestep** are all saturated —
 halving `dt` appears to buy 1.58x, but that turned out to be the noise model shrinking with
 `dt` rather than better integration, and at fixed noise spectral density the error is flat.
 
@@ -95,7 +99,9 @@ Each row is a decision that was measured, not assumed. `F##` are findings in
 | **`w_phys`** | **0.3** | the physics term is **derivative (Sobolev) supervision**: with `Vq` read from data the residual is a supplied label for `dω/dt`. Worth **5.2×** on `val_th`, 2.34× on the operator, 1.88× deployed | it buys operator quality and **costs handover stability** — `compounding` climbs 2.83 → 6.08 as `w_phys` goes 0 → 3. The optimum is where they cross. 0.1 ties 0.3 with a worse spread | **F13, F54** · `graphs/14` |
 | **`F` / `max_freq`** | **4 / 503** | what matters is **`max_freq/F` = 126 rad/s**, the *lowest* feature. Three combs sharing a lowest feature of 126 tie exactly, so the top is irrelevant | too low → degenerate with the raw `t` the trunk already has (`mf=126,F=4` starts at 31.5 rad/s = 0.06 cycles/window, the worst arm ever measured); too high → above the signal, which is 99.98% below 126 rad/s | **F31, F50, F51, F56** · `graphs/10, 20` |
 | **`W`** | **40** (12.5 ms) | W=40/50/100 are statistically tied; 10 and 20 are worse | **W=20 halves the network calls** (80 → 40 per simulated second, 19.4 → 10.9 ms/sim-s) for **1.88×** the error. A real lever if speed matters | **F32, F45, F58, F60** · `graphs/11` |
-| **`hidden_dim`** | **64** | `val_th` and `per_window_rms` are **flat** from 32 to 128 — the **latent** dimension is not the binding constraint | it buys **handover stability, not operator quality**: `compounding` 5.9 (h32) → 3.4 (h128). Below 64 hurts the rollout; above buys nothing. **Read F63 before generalising this**: `hidden_dim` only ever moved `sizes[-1]`, so interior width and depth were never tested — `exp17` does that | **F46, F63** · `graphs/17` |
+| **`hidden_dim`** (latent) | **64** | flat from 32 to 128 on `val_th` and `per_window_rms`. This is the **latent contraction** width — `sizes[-1]` — and nothing else | buys **handover stability, not operator quality**: `compounding` 5.9 (h32) → 3.4 (h128) | **F46** · `graphs/17` |
+| **`width`** (interior) | **64**, and it is **too small** | never tested until `exp17`. On the plain unlimited problem, w32 → w128 spans a factor of **3.1** in deployed error | wider is better everywhere measured so far, at ~2.4× the compute per epoch for w128. `w32` is worse in every family, so there is **no spare capacity to trim** | **F66** · `graphs/26` |
+| **`n_layers`** (depth) | **2**, and **too shallow for a piecewise target** | never tested until `exp17`. L2 → L4 is worth **2.0×** with the frequency limiter and only **1.1×** without it — depth is what represents the clamp's kink | it improves the operator (`per_window_rms` 2.6×) and *degrades* the handover (`compounding` 3.38 → 4.11). The opposite trade to width | **F66** · `graphs/26` |
 | **`sensors`** | **5000** (dt = 100 µs) | halving `dt` *appears* to buy 1.58×, but that is the **noise model shrinking with `dt`**, not better integration. At fixed noise spectral density the error is flat | the trapezoid's own truncation error is **5 orders of magnitude** below the sensor noise — integration was never the limit. Move to 10000 to match a 50 µs EMT step, not for accuracy | **F48, F49** · `graphs/19` |
 | **`n_runs`** | **5000** | 1000 → 5000 halved the train/val gap (2.60 → 1.45) and improved `val_th` 1.83× | 5000 → 10000 gives **no measurable improvement**, at 2× the data *and* 2× the epochs. The gap sits at ~1.45; that is where this setup lives, not a deficit | **F22, F55** |
 | **residual form** | **eq-4** (stored `Vq`) | its null space is exactly `(θ₀, ω₀)`, so it is pure derivative supervision and **cannot** be satisfied by a wrong solution | eq-6 (`Vq` from the predicted angle) lets a *self-consistent wrong angle* zero the residual. Never better, up to **8× worse**, degrading monotonically with `w_phys` | **F16, F53** · `graphs/21` |
@@ -268,6 +274,7 @@ draw different minibatch orders from the same seed.
 | `23` | speed against accuracy for the four deliverable models |
 | `24` | what the **frequency limiter** costs, split by whether the window saturated |
 | `25` | one run solved with and without the limiter — and whether the surrogate honours the band |
+| `26` | **interior depth and width** — the capacity axes `hidden_dim` never touched |
 | `Tunable_Kp_Ki_tests/01`–`06` | the deliverable: model menu, θ/ω split, gain sensitivity, contenders, gain showcase |
 
 ### The three claims that need no caveat
