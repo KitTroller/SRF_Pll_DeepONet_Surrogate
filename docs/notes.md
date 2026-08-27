@@ -1768,9 +1768,18 @@ families it is not about the limiter at all, and F46/F55 predict famR should be 
 because we are already within 1.02x of the solver we imitate. If depth or width recovers
 part of the 2.12x on famN and does nothing on famR, that is a clean mechanistic result.
 
-(3) is NOT addressed by anything currently running. Separating it needs a second LHS draw
-of the famN/famR pair -- one generate plus 8 jobs. Worth doing before the 2.12x is
-quoted anywhere load-bearing.
+(3) is addressed by **famS/famT = famN/famR re-drawn at `--lhs_seed 25`**, running as
+`exp18`. Same recipe, same architecture (L2_w64, where the 2.12x was measured), different
+draw. If the ratio reproduces near 2.12x the number is quotable; if it does not, F65 is
+retracted -- and that would be the seventh single-draw comparison in this project to turn
+out to be a draw difference.
+
+**A naming note, because the letters mislead.** famS and famT are NOT new configurations;
+they are famN and famR generated again with a different seed. The one-letter-per-family
+scheme carries no information about what varies, which is fine while there are five
+families and actively confusing at twenty. A scheme like `lim_s21` / `nolim_s25` would
+have made this legible -- worth adopting on the next project rather than retro-fitting
+here, since the stem is baked into every filename, record and checkpoint tag.
 
 **DOES THE SURROGATE HONOUR THE CONSTRAINT?** Siemens specified a hard limit, so this is
 a compliance question, not an accuracy one -- and `graphs/25` (top right) answers it: the

@@ -209,7 +209,14 @@ where a flag overrides it.
 | `famP_W40` | **10000** | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famP --W 40 --n_runs 10000 --lhs_seed 23 --freq_limit 18.8496` |
 | `famQ_W40` | **10000** | 5000 / 100 µs | ±20 | **yes** | yes | `generate_family.py --stem famQ --W 40 --n_runs 10000 --lhs_seed 24 --freq_limit 18.8496 --gains` |
 | `famR_W40` | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famR --W 40 --n_runs 5000 --lhs_seed 21` |
-| `famS_W40` / `famT_W40` | 5000 | 5000 / 100 µs | ±20 | no | yes | as famN / famR but `--lhs_seed 25` — the second draw of the pair |
+| `famS_W40` = **famN, draw 2** | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famS --W 40 --n_runs 5000 --lhs_seed 25 --freq_limit 18.8496` |
+| `famT_W40` = **famR, draw 2** | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famT --W 40 --n_runs 5000 --lhs_seed 25` |
+
+**`famS`/`famT` are not new configurations.** They are byte-for-byte the same recipe as
+`famN`/`famR`, re-drawn at `--lhs_seed 25` instead of 21, so that F65's "the limiter costs
+2.12x" can be checked on a second draw rather than resting on one. Read them as *famN
+draw 2* and *famR draw 2*; the separate letters are an artefact of the stem being baked
+into every filename and checkpoint tag, not a difference in the experiment.
 
 `famN`–`famT` are the **frequency-limiter** families (branch `Siemens_Request`, `exp17`);
 everything above them is unlimited. Note the seeds: **famN and famR share `--lhs_seed 21`
