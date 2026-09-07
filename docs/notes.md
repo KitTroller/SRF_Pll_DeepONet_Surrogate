@@ -1698,7 +1698,29 @@ only ever rewrote `sizes[-1]` -- the latent contraction width (F63). The interio
 and the depth had never been varied at all. The flat result was real and the
 generalisation was not.
 
-**STILL MISSING**: `L3_w128` (1 of 4 in each family) and `L4_w128` (0 of 4). Those are the
+**famO CONFIRMS IT, AND THE MECHANISM DOES NOT DEPEND ON THE GAINS INPUTS.** famO is
+limiter + TUNABLE Kp/Ki -- the deliverable -- and it tracks famN almost exactly:
+
+| cell | params | famN (limiter, fixed) | **famO (limiter + gains)** | famR (unlimited) |
+|---|---|---|---|---|
+| L2_w64 | ~45.8k | 1.00x | **1.00x** | 1.00x |
+| L3_w64 | ~54.1k | 0.50x | **0.45x** | 0.88x |
+| L4_w64 | ~62.5k | 0.46x | **0.42x** | 0.94x |
+| L2_w128 | ~108k | 0.65x | **0.59x** | 0.71x |
+| L3_w128 | ~141k | **0.35x** | pending | 0.73x |
+
+The pre-registration in `exp18` said 1.7-2.2x for famO; it delivered **2.4x**. Both
+LIMITED families gain ~2x from depth and the unlimited one gains ~1.1x, so the effect is
+about the piecewise target, not about the number of input dimensions.
+
+**WIDTH SHOWS DIMINISHING RETURNS; famR SHOWS SATURATION.** famN at L2: w32 -> w64 is
+1.84x, w64 -> w128 is 1.54x. famR is FLAT from L2_w128 (0.71x) to L3_w128 (0.73x) -- the
+unlimited problem has run out of things to buy. Both limited families are still falling.
+
+**STILL MISSING**: `L4_w128` everywhere (famN 0/4, famR 3/4, famO queued as exp20) and
+famO's `L3_w128` (exp19, killed by the 24 h wall limit). Those are the cells that decide
+whether the limited problem turns over or keeps rewarding size -- and therefore whether
+w256 is worth engineering around the wall limit for. Those are the
 cells the trend says should be best, and they are the ones that would show whether this
 saturates. 14 jobs running as array `limwide` at 8 cores. Timing from the completed
 cells: everything early-stops between 606 and 818 epochs, so L4_w128 at ~800 epochs is
@@ -1768,7 +1790,23 @@ families it is not about the limiter at all, and F46/F55 predict famR should be 
 because we are already within 1.02x of the solver we imitate. If depth or width recovers
 part of the 2.12x on famN and does nothing on famR, that is a clean mechanistic result.
 
-(3) is addressed by **famS/famT = famN/famR re-drawn at `--lhs_seed 25`**, running as
+**(3) IS NOW CLOSED. THE SECOND DRAW REPRODUCES.** famS/famT are famN/famR re-drawn at
+`--lhs_seed 25` -- same recipe, same architecture, independent data:
+
+| | draw 1 (famN/famR, seed 21) | draw 2 (famS/famT, seed 25) |
+|---|---|---|
+| runs that NEVER saturate | 2.12x | **2.13x** |
+| clean windows of runs that do | 4.05x | 3.41x |
+| SATURATED windows | 22.20x | **21.87x** |
+
+The two load-bearing numbers agree to **0.5%** and **1.5%** on independent draws. F65 is
+confirmed and quotable. `graphs/27`, `src/limiter_report.py --limited famS_W40
+--unlimited famT_W40`. The middle row moved most (16%), which is expected -- it depends on
+WHICH runs happen to saturate, and that is the quantity a re-draw changes.
+
+The original plan, for the record:
+
+(3) was addressed by **famS/famT = famN/famR re-drawn at `--lhs_seed 25`**, run as
 `exp18`. Same recipe, same architecture (L2_w64, where the 2.12x was measured), different
 draw. If the ratio reproduces near 2.12x the number is quotable; if it does not, F65 is
 retracted -- and that would be the seventh single-draw comparison in this project to turn
