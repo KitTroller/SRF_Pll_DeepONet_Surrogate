@@ -76,17 +76,15 @@ def per_window(model, ck, V, th_t, om_t, u, limit):
     return out
 
 
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--out", default="24_limiter_cost.png")
-    p.add_argument("--limited", default="famN_W40",
-                   help="the family WITH the limiter. famS_W40 is famN re-drawn at seed 25")
-    p.add_argument("--unlimited", default="famR_W40",
-                   help="its paired twin WITHOUT the limiter, same --lhs_seed")
-    a = p.parse_args()
+GROUPS = ("no limiter", "limiter,\nruns that\nNEVER saturate",
+          "limiter, clean\nwindows of runs\nthat DO", "limiter,\nSATURATED\nwindows")
+GCOL = ("tab:blue", "tab:green", "tab:orange", "tab:red")
 
+
+def one_pair(limited, unlimited):
+    """The four groups for ONE draw. Returns [(label, values)] plus the saturated fraction."""
     runs = {}
-    for fam, limit in ((a.unlimited, None), (a.limited, LIMIT)):
+    for fam, limit in ((unlimited, None), (limited, LIMIT)):
         Va, Vb, Vc, th_t, om_t, u = truth(limit)
         paths = sorted(q for q in glob.glob(f"runs/{fam}_*sp0.pth") if "_L" not in q)
         if not paths:
@@ -97,58 +95,82 @@ def main():
             acc += per_window(m, ck, (Va, Vb, Vc), th_t, om_t, u, limit)
             torch.set_default_dtype(torch.float64)
         runs[fam] = acc
-        print(f"{fam}: {len(paths)} seeds x {len(acc)//len(paths)} runs")
+        print(f"  {fam}: {len(paths)} seeds x {len(acc)//len(paths)} runs")
     PS.pll_constants.freq_limit = None
 
-    R, Nn = runs[a.unlimited], runs[a.limited]
+    R, Nn = runs[unlimited], runs[limited]
     quiet = [i for i, (e, sat) in enumerate(Nn) if not sat.any()]
     noisy = [i for i, (e, sat) in enumerate(Nn) if sat.any()]
-    first = [int(np.argmax(sat)) for e, sat in Nn if sat.any()]
+    return ([np.concatenate([e for e, _ in R]),
+             np.concatenate([Nn[i][0] for i in quiet]),
+             np.concatenate([Nn[i][0][~Nn[i][1]] for i in noisy]),
+             np.concatenate([Nn[i][0][Nn[i][1]] for i in noisy])],
+            float(np.mean([sat.mean() for _, sat in Nn])),
+            int(np.median([np.argmax(sat) for _, sat in Nn if sat.any()])))
 
-    groups = [
-        (a.unlimited.split("_")[0] + "\nno limiter", np.concatenate([e for e, _ in R]), "tab:blue"),
-        (a.limited.split("_")[0] + "\nruns that NEVER\nsaturate", np.concatenate([Nn[i][0] for i in quiet]), "tab:green"),
-        (a.limited.split("_")[0] + "\nclean windows,\nruns that DO", np.concatenate([Nn[i][0][~Nn[i][1]] for i in noisy]), "tab:orange"),
-        (a.limited.split("_")[0] + "\nSATURATED\nwindows", np.concatenate([Nn[i][0][Nn[i][1]] for i in noisy]), "tab:red"),
-    ]
-    ref = np.median(groups[0][1])
-    print(f"\nruns that never saturate: {len(quiet)}/{len(Nn)}  |  first saturated window: "
-          f"median {int(np.median(first))} of 40")
-    print(f"\n{'group':44s} {'n':>7s} {'median':>11s} {'p90':>11s} {"vs " + a.unlimited.split("_")[0]:>9s}")
-    for lab, v, _ in groups:
-        print(f"{lab.replace(chr(92)+chr(110), ' '):44s} {len(v):7d} {np.median(v):11.3e} "
-              f"{np.quantile(v, .9):11.3e} {np.median(v)/ref:8.2f}x")
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--out", default="24_limiter_cost.png")
+    p.add_argument("--pairs", nargs="+",
+                   default=["famN_W40,famR_W40", "famS_W40,famT_W40"],
+                   help="limited,unlimited per draw. The two draws are plotted SIDE BY "
+                        "SIDE and never pooled -- pooling would hide the replication, "
+                        "which is the whole result.")
+    a = p.parse_args()
+
+    draws = []
+    for i, pr in enumerate(a.pairs):
+        lim, unl = pr.split(",")
+        print(f"draw {i+1}: {lim} vs {unl}")
+        vals, satfrac, first = one_pair(lim, unl)
+        draws.append((f"draw {i+1}\n{lim.split('_')[0]}/{unl.split('_')[0]}", vals, satfrac, first))
+
+    print(f"\n{'group':34s}" + "".join(f"{d[0].splitlines()[0]:>22s}" for d in draws))
+    for gi, g in enumerate(GROUPS):
+        row = ""
+        for _, vals, _, _ in draws:
+            row += f"{np.median(vals[gi]):11.3e}{np.median(vals[gi])/np.median(vals[0]):8.2f}x"
+        print(f"{g.replace(chr(10), ' '):34s}{row}")
 
     import matplotlib.pyplot as plt
     rng = np.random.default_rng(0)
-    fig, ax = plt.subplots(1, 2, figsize=(14, 5.4))
-    for i, (lab, v, c) in enumerate(groups):
-        ax[0].scatter(np.full(len(v), i) + rng.uniform(-.17, .17, len(v)), v,
-                      s=3, alpha=.10, color=c, zorder=2)
-        ax[0].hlines(np.median(v), i - .32, i + .32, color=c, lw=3.2, zorder=4)
-        ax[0].vlines(i, np.quantile(v, .1), np.quantile(v, .9), color=c, lw=1.7, zorder=3)
-        ax[0].annotate(f"{np.median(v):.2e}\n{np.median(v)/ref:.2f}x",
-                       (i, np.median(v)), textcoords="offset points", xytext=(17, -2),
-                       fontsize=9, color=c, fontweight="bold")
-    ax[0].set_xticks(range(4))
-    ax[0].set_xticklabels([g[0].replace(chr(92)+chr(110), chr(10)) for g in groups], fontsize=8.5)
-    ax[0].set_yscale("log"); ax[0].grid(alpha=.3, which="both")
+    fig, ax = plt.subplots(1, 2, figsize=(15, 5.6))
+    nd = len(draws)
+    off = np.linspace(-.22, .22, nd) if nd > 1 else [0.0]
+    mk = ("o", "s", "^")
+    for di, (dlab, vals, satfrac, first) in enumerate(draws):
+        for gi, v in enumerate(vals):
+            x = gi + off[di]
+            ax[0].scatter(np.full(len(v), x) + rng.uniform(-.055, .055, len(v)), v,
+                          s=2.5, alpha=.09, color=GCOL[gi], zorder=2)
+            ax[0].hlines(np.median(v), x - .1, x + .1, color=GCOL[gi], lw=3, zorder=4)
+            ax[0].vlines(x, np.quantile(v, .1), np.quantile(v, .9), color=GCOL[gi],
+                         lw=1.5, zorder=3)
+            ax[0].scatter([x], [np.median(v)], marker=mk[di % 3], s=46, color=GCOL[gi],
+                          edgecolor="k", lw=.8, zorder=5)
+        ax[1].plot(range(4), [np.median(v) / np.median(vals[0]) for v in vals],
+                   "-" + mk[di % 3], lw=2, ms=9, label=dlab.replace("\n", "  "))
+        for gi, v in enumerate(vals):
+            ax[1].annotate(f"{np.median(v)/np.median(vals[0]):.2f}x", (gi, np.median(v)/np.median(vals[0])),
+                           textcoords="offset points", xytext=(8, 6 - 14 * di), fontsize=9)
+
+    for k in (0, 1):
+        ax[k].set_xticks(range(4)); ax[k].set_xticklabels(GROUPS, fontsize=8.5)
+        ax[k].set_yscale("log"); ax[k].grid(alpha=.3, which="both")
     ax[0].set_ylabel("per-window $\\theta$ RMS [rad]")
-    ax[0].set_title("bar = median, whisker = p10-p90, 4 seeds x 12 runs x 40 windows",
-                    fontsize=10)
+    ax[0].set_title("Every window, both draws.  bar = median, whisker = p10-p90",
+                    fontsize=10.5)
+    ax[1].set_ylabel("$\\times$ that draw's own no-limiter baseline")
+    ax[1].set_title("The ratios are what replicate", fontsize=10.5)
+    ax[1].legend(fontsize=9.5); ax[1].axhline(1, color="k", lw=1)
 
-    lo = min(g[1].min() for g in groups); hi = max(g[1].max() for g in groups)
-    bins = np.logspace(np.log10(lo), np.log10(hi), 60)
-    for lab, v, c in groups:
-        ax[1].hist(v, bins=bins, histtype="step", lw=1.8, color=c, density=True,
-                   label=f"{lab.replace(chr(92)+chr(110), ' ')}  (n={len(v)})")
-    ax[1].set_xscale("log"); ax[1].set_xlabel("per-window $\\theta$ RMS [rad]")
-    ax[1].set_ylabel("density"); ax[1].legend(fontsize=8); ax[1].grid(alpha=.3, which="both")
-    ax[1].set_title("Saturated windows are a separate population", fontsize=10)
-
-    fig.suptitle("The limiter costs 2.1x EVERYWHERE and 22x where it fires.  "
-                 f"Only {100*np.mean([s.mean() for _, s in Nn]):.1f}% of windows saturate, "
-                 "so the aggregate hides both.", fontsize=12)
+    fr = sorted({f"{100*d[2]:.1f}%" for d in draws})       # both draws agree -> print once
+    sat = fr[0] if len(fr) == 1 else " and ".join(fr)
+    fig.suptitle("The limiter costs ~2.1x EVERYWHERE and ~22x where it fires — "
+                 f"and it replicates across two independent LHS draws.\n"
+                 f"Only {sat} of windows saturate, so a pooled metric shows none of it.",
+                 fontsize=12)
     fig.tight_layout()
     out = _graphs(a.out); fig.savefig(out, dpi=140)
     print(f"\n-> {out}")

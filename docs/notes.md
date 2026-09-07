@@ -1735,7 +1735,7 @@ knob table. It says the capacity claim in that table is wrong and the deployed m
 headroom that was never explored.
 
 ### F65 — **WHAT THE LIMITER COSTS, DECOMPOSED.** `graphs/24`, `graphs/25`.
-famN vs famR, 4 seeds each, paired ICs. First results from `exp17`, 2026-08-25.
+famN vs famR and famS vs famT, 4 seeds each, paired ICs. `exp17`/`exp18`.
 
 famN and famR are the SAME family generated twice from `--lhs_seed 21`, with and without
 the limiter. **Both are fixed-gain** -- the tunable-gain limited families are famO/famQ --
@@ -1800,8 +1800,9 @@ part of the 2.12x on famN and does nothing on famR, that is a clean mechanistic 
 | SATURATED windows | 22.20x | **21.87x** |
 
 The two load-bearing numbers agree to **0.5%** and **1.5%** on independent draws. F65 is
-confirmed and quotable. `graphs/27`, `src/limiter_report.py --limited famS_W40
---unlimited famT_W40`. The middle row moved most (16%), which is expected -- it depends on
+confirmed and quotable. `graphs/24` plots both draws side by side -- `src/limiter_report.py` defaults to
+exactly that. They are NEVER pooled: pooling would hide the replication, which is the
+result. The middle row moved most (16%), which is expected -- it depends on
 WHICH runs happen to saturate, and that is the quantity a re-draw changes.
 
 The original plan, for the record:

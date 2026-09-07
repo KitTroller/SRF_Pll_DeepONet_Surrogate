@@ -20,7 +20,7 @@ condition, so a 0.5 s trajectory is 40 handovers with no ground truth anywhere i
 > never fires**, 4.05x on clean windows downstream of one that did, and 22.2x on the
 > saturated windows themselves — while only 4% of windows saturate, so the aggregate
 > metric shows none of it — **and that result replicates on a second LHS draw at 2.13x
-> and 21.87x** (F65, `graphs/27`). **F66** is the bigger surprise and is not limiter-specific:
+> and 21.87x** (F65, `graphs/24`). **F66** is the bigger surprise and is not limiter-specific:
 > interior **width** and **depth** had never been tested (`hidden_dim` only ever moved the
 > latent dimension), and neither is flat — width spans **3.1×** even on the plain
 > unlimited problem, so the deployed model has headroom nobody had looked for. On the
@@ -285,7 +285,6 @@ draw different minibatch orders from the same seed.
 | `24` | what the **frequency limiter** costs, split by whether the window saturated |
 | `25` | one run solved with and without the limiter — and whether the surrogate honours the band |
 | `26` | **interior depth and width** — the capacity axes `hidden_dim` never touched |
-| `27` | the limiter's cost on a **second LHS draw** — F65's replication check |
 | `Tunable_Kp_Ki_tests/01`–`06` | the deliverable: model menu, θ/ω split, gain sensitivity, contenders, gain showcase |
 
 ### The three claims that need no caveat
