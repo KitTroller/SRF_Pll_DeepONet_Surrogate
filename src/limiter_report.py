@@ -79,10 +79,14 @@ def per_window(model, ck, V, th_t, om_t, u, limit):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--out", default="24_limiter_cost.png")
+    p.add_argument("--limited", default="famN_W40",
+                   help="the family WITH the limiter. famS_W40 is famN re-drawn at seed 25")
+    p.add_argument("--unlimited", default="famR_W40",
+                   help="its paired twin WITHOUT the limiter, same --lhs_seed")
     a = p.parse_args()
 
     runs = {}
-    for fam, limit in (("famR_W40", None), ("famN_W40", LIMIT)):
+    for fam, limit in ((a.unlimited, None), (a.limited, LIMIT)):
         Va, Vb, Vc, th_t, om_t, u = truth(limit)
         paths = sorted(q for q in glob.glob(f"runs/{fam}_*sp0.pth") if "_L" not in q)
         if not paths:
@@ -96,21 +100,21 @@ def main():
         print(f"{fam}: {len(paths)} seeds x {len(acc)//len(paths)} runs")
     PS.pll_constants.freq_limit = None
 
-    R, Nn = runs["famR_W40"], runs["famN_W40"]
+    R, Nn = runs[a.unlimited], runs[a.limited]
     quiet = [i for i, (e, sat) in enumerate(Nn) if not sat.any()]
     noisy = [i for i, (e, sat) in enumerate(Nn) if sat.any()]
     first = [int(np.argmax(sat)) for e, sat in Nn if sat.any()]
 
     groups = [
-        ("famR\nno limiter", np.concatenate([e for e, _ in R]), "tab:blue"),
-        ("famN\nruns that NEVER\nsaturate", np.concatenate([Nn[i][0] for i in quiet]), "tab:green"),
-        ("famN\nclean windows,\nruns that DO", np.concatenate([Nn[i][0][~Nn[i][1]] for i in noisy]), "tab:orange"),
-        ("famN\nSATURATED\nwindows", np.concatenate([Nn[i][0][Nn[i][1]] for i in noisy]), "tab:red"),
+        (a.unlimited.split("_")[0] + "\nno limiter", np.concatenate([e for e, _ in R]), "tab:blue"),
+        (a.limited.split("_")[0] + "\nruns that NEVER\nsaturate", np.concatenate([Nn[i][0] for i in quiet]), "tab:green"),
+        (a.limited.split("_")[0] + "\nclean windows,\nruns that DO", np.concatenate([Nn[i][0][~Nn[i][1]] for i in noisy]), "tab:orange"),
+        (a.limited.split("_")[0] + "\nSATURATED\nwindows", np.concatenate([Nn[i][0][Nn[i][1]] for i in noisy]), "tab:red"),
     ]
     ref = np.median(groups[0][1])
     print(f"\nruns that never saturate: {len(quiet)}/{len(Nn)}  |  first saturated window: "
           f"median {int(np.median(first))} of 40")
-    print(f"\n{'group':44s} {'n':>7s} {'median':>11s} {'p90':>11s} {'vs famR':>9s}")
+    print(f"\n{'group':44s} {'n':>7s} {'median':>11s} {'p90':>11s} {"vs " + a.unlimited.split("_")[0]:>9s}")
     for lab, v, _ in groups:
         print(f"{lab.replace(chr(92)+chr(110), ' '):44s} {len(v):7d} {np.median(v):11.3e} "
               f"{np.quantile(v, .9):11.3e} {np.median(v)/ref:8.2f}x")

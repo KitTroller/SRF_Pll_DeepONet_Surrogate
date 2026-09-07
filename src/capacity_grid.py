@@ -51,8 +51,9 @@ def main():
     a = p.parse_args()
 
     import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(1, 3, figsize=(16, 5))
-    fams = [("famN_W40_cap", "famN — LIMITED (piecewise target)"),
+    fig, ax = plt.subplots(1, 4, figsize=(21, 5))
+    fams = [("famN_W40_cap", "famN — limiter, FIXED gains"),
+            ("famO_W40_cap", "famO — limiter + TUNABLE gains\n(the deliverable)"),
             ("famR_W40_cap", "famR — unlimited control")]
     store = {}
 
@@ -82,26 +83,28 @@ def main():
         ax[i].set_title(title, fontsize=10.5)
         ax[i].grid(alpha=.3, which="both"); ax[i].legend(fontsize=9)
 
-    ys = [y for x in ax[:2] for l in x.get_lines() for y in np.asarray(l.get_ydata())
+    ys = [y for x in ax[:3] for l in x.get_lines() for y in np.asarray(l.get_ydata())
           if np.isfinite(y)]
     lo, hi = min(ys), max(ys)
-    for i in (0, 1):
+    for i in (0, 1, 2):
         ax[i].set_ylim(lo * .8, hi * 1.25)          # same axis or the panels do not compare
 
     # third panel: the gain relative to each family's OWN default, which is the thing that
     # is actually comparable between two different physics
     keys = [k for k in store["famN_W40_cap"] if k in store["famR_W40_cap"]]
     keys.sort(key=lambda k: (k[1], k[0]))
-    x = np.arange(len(keys))
-    ax[2].bar(x - .2, [1 / store["famN_W40_cap"][k] for k in keys], .38,
-              color="tab:red", label="famN (limited)", edgecolor="k", lw=.5)
-    ax[2].bar(x + .2, [1 / store["famR_W40_cap"][k] for k in keys], .38,
-              color="tab:blue", label="famR (control)", edgecolor="k", lw=.5)
-    ax[2].axhline(1, color="k", lw=1)
-    ax[2].set_xticks(x); ax[2].set_xticklabels([f"L{L}\nw{w}" for L, w in keys], fontsize=8.5)
-    ax[2].set_ylabel("improvement over that family's own default  ($\\times$)")
-    ax[2].set_title("Depth helps the LIMITED problem about twice as much", fontsize=10.5)
-    ax[2].legend(fontsize=9); ax[2].grid(alpha=.3, axis="y")
+    x = np.arange(len(keys)); w_ = .27
+    for off, d, c, lab in ((-w_, "famN_W40_cap", "tab:red", "famN (limiter, fixed)"),
+                           (0.0, "famO_W40_cap", "tab:purple", "famO (limiter + gains)"),
+                           (w_, "famR_W40_cap", "tab:blue", "famR (unlimited)")):
+        ax[3].bar(x + off, [1 / store[d][k] if k in store[d] else 0 for k in keys], w_ * .92,
+                  color=c, label=lab, edgecolor="k", lw=.5)
+    ax[3].axhline(1, color="k", lw=1)
+    ax[3].set_xticks(x); ax[3].set_xticklabels([f"L{L}\nw{w}" for L, w in keys], fontsize=8.5)
+    ax[3].set_ylabel("improvement over that family's own default  ($\\times$)")
+    ax[3].set_title("Both LIMITED families gain ~2x from depth.\nThe unlimited one does not.",
+                    fontsize=10.5)
+    ax[3].legend(fontsize=8.5); ax[3].grid(alpha=.3, axis="y")
 
     fig.suptitle("Interior depth and width were never tested — `hidden_dim` only moved the "
                  "latent dimension (F63).  They are not flat.", fontsize=12)
@@ -109,10 +112,11 @@ def main():
     out = _graphs(a.out); fig.savefig(out, dpi=140)
     print(f"-> {out}")
 
-    print(f"\n{'cell':10s} {'params':>8s} {'famN x base':>12s} {'famR x base':>12s} {'ratio':>8s}")
+    print(f"\n{'cell':10s} {'famN':>9s} {'famO':>9s} {'famR':>9s}   (x that family's own default)")
     for k in keys:
-        n, r = store["famN_W40_cap"][k], store["famR_W40_cap"][k]
-        print(f"L{k[0]}_w{k[1]:<6d} {'':>8s} {n:11.2f}x {r:11.2f}x {r/n:7.2f}x")
+        row = "".join(f"{store[d][k]:8.2f}x" if k in store[d] else f"{'--':>9s}"
+                      for d in ("famN_W40_cap", "famO_W40_cap", "famR_W40_cap"))
+        print(f"L{k[0]}_w{k[1]:<6d} {row}")
 
 
 if __name__ == "__main__":

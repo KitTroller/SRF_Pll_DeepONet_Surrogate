@@ -1,0 +1,31 @@
+# exp20 -- the frontier cell, on the deliverable family. 4 jobs.
+#
+# The size sweep now looks like this (x each family's own L2_w64 default):
+#
+#   cell        famN(lim,fixed)  famO(lim,gains)  famR(unlimited)
+#   L2_w64          1.00x            1.00x            1.00x
+#   L3_w64          0.50x            0.45x            0.88x
+#   L4_w64          0.46x            0.42x            0.94x
+#   L2_w128         0.65x            0.59x            0.71x
+#   L3_w128         0.35x             --              0.73x   <- famR SATURATED here
+#   L4_w128          --               --               --
+#
+# famR is flat from L2_w128 to L3_w128 (0.71 -> 0.73): the unlimited problem has run out
+# of things to buy with capacity. Both LIMITED families are still falling. L4_w128 is the
+# corner nobody has reached, and it is the only cell that can say whether the limited
+# problem turns over or keeps rewarding size -- which is what decides whether w256 is
+# worth engineering around the wall limit for.
+#
+# famO gets it because famO is the deliverable. famN's and famR's L4_w128, plus famO's
+# L3_w128, are RESUBMITS of jobs that hit the 24 h wall limit -- generate those with
+# hpc/pending.py rather than by hand, so the one already-finished famR seed is not redone.
+#
+# ALL OF THESE NEED job_sweep_wide.sh (8 cores). At 4 cores L4_w128 is ~173,632 params and
+# ~24 h at 800 epochs, which is exactly what killed the first attempt. Every completed cell
+# so far early-stopped between 606 and 818 epochs, so 8 cores should land it around 17 h --
+# but there is no margin if a seed runs long.
+
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 4 --width 128 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 4 --width 128 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 4 --width 128 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 4 --width 128 --results_dir sweeps_famO_W40_cap
