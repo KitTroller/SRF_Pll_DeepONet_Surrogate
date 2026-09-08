@@ -1,0 +1,52 @@
+# exp23 -- does removing the white measurement noise lower the error floor? 8 jobs.
+#
+# The supervisor's EMT simulation carries no white measurement noise. Ours adds
+# 0.1*(rand-0.5) pu to Va/Vb/Vc, and F48/F49 established that this noise -- not the
+# integrator -- is what sets the accuracy floor: the trapezoid's own truncation error is
+# FIVE ORDERS OF MAGNITUDE below it, and the apparent 1.58x gain from halving dt turned
+# out to be the noise model shrinking with dt rather than better integration.
+#
+# So the prediction is that removing it should lower the floor a long way. How far is the
+# question; nothing in this project has measured it.
+#
+#   famU  = famO with --no_white_noise   limiter + TUNABLE gains, --lhs_seed 22
+#   famV  = famR with --no_white_noise   no limiter, fixed gains, --lhs_seed 21
+#
+# BOTH REUSE THE EXISTING FAMILY'S SEED ON PURPOSE. `noise` is DRAWN before the flag is
+# tested in `_grid_phases`, so the RNG stream is identical either way. Verified on an
+# 8-run pair: kp, ki, fault_kind and lhs_samples all bit-equal, and Va differs by exactly
+# 0.05000 pu -- the noise amplitude and nothing else. famU/famO and famV/famR are
+# therefore PAIRED, and the noise is the only variable.
+#
+# ARCHITECTURE IS THE DEFAULT L2_w64, deliberately, even though F66 showed it is not the
+# best. famO and famR have 4-seed records at exactly that architecture, so this is a
+# one-factor comparison against work already on disk. Re-running at L4_w64 is the natural
+# follow-up IF the noise result is large.
+#
+# THE RISK, and it has a direct precedent. F62: removing FAULTS from training bought
+# nothing on clean data and cost 5-9x on voltage sags, because the model had never seen
+# that region of input space. A noise-free model has never seen noisy Va/Vb/Vc. If the
+# deployment has ANY stochastic component the model is extrapolating.
+#
+# So the analysis is TWO numbers, not one, exactly as F62 was:
+#   1. noise-free model on noise-free truth  -> what the floor becomes
+#   2. noise-free model on NOISY truth       -> what it costs if the assumption is wrong
+# Reporting only (1) would repeat the exp16 mistake in a new place.
+#
+# PRE-REGISTERED: (1) improves by more than 2x -- the noise floor is the binding
+# constraint per F49, so removing it should move the number a long way, further than any
+# architecture change did. (2) degrades badly, plausibly worse than the 5-9x that removing
+# faults cost, because noise is present in EVERY window rather than 4% of them.
+#
+# GENERATE FIRST:
+#   python hpc/generate_family.py --stem famU --W 40 --n_runs 5000 --lhs_seed 22 --gains --freq_limit 18.8496 --no_white_noise
+#   python hpc/generate_family.py --stem famV --W 40 --n_runs 5000 --lhs_seed 21 --no_white_noise
+
+--dataset famU_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famU_W40
+--dataset famU_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famU_W40
+--dataset famU_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famU_W40
+--dataset famU_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famU_W40
+--dataset famV_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famV_W40
+--dataset famV_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famV_W40
+--dataset famV_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famV_W40
+--dataset famV_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famV_W40

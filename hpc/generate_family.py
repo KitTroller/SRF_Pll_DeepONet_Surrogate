@@ -57,6 +57,11 @@ def main():
                         "the EMT co-simulation never leaves |omega| < 0.15, and only 6.8%% "
                         "of our windows are in that band -- a narrow model is a specialist "
                         "for warm co-simulation, not a replacement for the wide one")
+    p.add_argument("--no_white_noise", action="store_true",
+                   help="drop the white measurement noise from Va/Vb/Vc. The noise is "
+                        "still DRAWN, so a family generated with this at the SAME "
+                        "--lhs_seed is bit-paired with its noisy twin: same ICs, same "
+                        "harmonics, same faults, same gains, only the noise term differs")
     p.add_argument("--freq_limit", type=float, default=None,
                    help="Siemens frequency limiter: clamp dtheta/dt to omega_0 +/- this "
                         "many rad/s. Omit for no limiter")
@@ -69,7 +74,7 @@ def main():
     # DIFFERENT objects and both have to be patched.
     gains = a.gains or a.kp_range is not None or a.ki_range is not None
     if (a.n_runs is not None or a.sensors is not None or a.omega_range is not None
-            or gains or a.no_faults):
+            or gains or a.no_faults or a.no_white_noise):
         import dataset_generator as DG
         import PLL_Simulator as PS
         if a.n_runs is not None:
@@ -93,6 +98,15 @@ def main():
             # differs. That makes a gain-box comparison PAIRED instead of two independent
             # draws, which is most of the reason this batch can use 4 seeds and not 16.
             DG.initial_conditions_config.disturbances.enabled = False
+        if a.no_white_noise:
+            # BOTH objects, and PS is the one that matters. `PLLSimulator.__init__` takes
+            # `initial_conditions=initial_conditions_config` defaulted to PLL_Simulator's
+            # OWN module-level load, and Dataset_Creator constructs it with no args -- so
+            # patching only DG's copy leaves the flag unread and you get a NOISY dataset
+            # under a noise-free name. Third time this exact trap has bitten: see the
+            # freq_limit note below and the NOTE at the top of this block.
+            DG.initial_conditions_config.white_noise_on_flag = False
+            PS.initial_conditions_config.white_noise_on_flag = False
         if a.freq_limit is not None:
             # TOP LEVEL, not under `Pll:`. PhysicsEquations reads
             # `pll_constants.get("freq_limit")`, so assigning to `pll_constants.Pll
@@ -120,7 +134,8 @@ def main():
           f"time_window={sim.physics.time_window}s  lhs_seed={a.lhs_seed}")
     g, d = dc.init_cond.gains, dc.init_cond.disturbances
     print(f"  faults={'ON' if d.enabled else 'OFF'}   "
-          f"gains={'Kp %s  Ki %s' % (list(g.Kp), list(g.Ki)) if g.enabled else 'fixed'}")
+          f"gains={'Kp %s  Ki %s' % (list(g.Kp), list(g.Ki)) if g.enabled else 'fixed'}   "
+          f"white_noise={'ON' if sim.white_noise_on_flag else 'OFF'}")
     if a.lhs_seed is None:
         print("  !! no --lhs_seed: this dataset will NOT be reproducible")
     for W in a.W:

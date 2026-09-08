@@ -69,6 +69,7 @@ class PLLSimulator():
     def __init__(self, dt = None, initial_conditions=initial_conditions_config):
         self.physics = PhysicsEquations(pll_constants=pll_constants)
         self.n_runs = initial_conditions_config.n_runs
+        self.white_noise_on_flag = initial_conditions.get("white_noise_on_flag", True)
         self.N = self.physics.sensors
         self.dt = dt if dt is not None else self.physics.time_window / self.N
         self.t = (torch.arange(self.N) * self.dt).reshape(1, self.N)
@@ -203,9 +204,14 @@ class PLLSimulator():
         Va_harmonics, Vb_harmonics, Vc_harmonics = self.higher_harmonics_noise(n_runs, t, omega_g, theta_grid)
             
         phase = omega_g * t + theta_grid  # (n_runs,1) * (1,N) -> (n_runs,N) broadcasting not matrix multiplication careful bro
-        Va = amplitude * torch.cos(phase)                  + sag_gain * Va_harmonics + noise[0]
-        Vb = amplitude * torch.cos(phase - 2/3 * torch.pi) + sag_gain * Vb_harmonics + noise[1]
-        Vc = amplitude * torch.cos(phase + 2/3 * torch.pi) + sag_gain * Vc_harmonics + noise[2]
+        if self.white_noise_on_flag:
+            Va = amplitude * torch.cos(phase)                  + sag_gain * Va_harmonics + noise[0]
+            Vb = amplitude * torch.cos(phase - 2/3 * torch.pi) + sag_gain * Vb_harmonics + noise[1]
+            Vc = amplitude * torch.cos(phase + 2/3 * torch.pi) + sag_gain * Vc_harmonics + noise[2]
+        else:
+            Va = amplitude * torch.cos(phase)                  + sag_gain * Va_harmonics
+            Vb = amplitude * torch.cos(phase - 2/3 * torch.pi) + sag_gain * Vb_harmonics
+            Vc = amplitude * torch.cos(phase + 2/3 * torch.pi) + sag_gain * Vc_harmonics
             
         return Va, Vb, Vc
         
