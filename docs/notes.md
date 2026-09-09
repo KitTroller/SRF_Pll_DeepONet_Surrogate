@@ -1618,6 +1618,71 @@ from 40 to 80, so the 0.5 s rollout now performs **twice as many handovers**. Co
 roughly doubles and cancels the per-window gain exactly. You cannot hold both the
 architecture and the handover count fixed while halving dt; exp6 chose architecture.
 
+### F68 — **THE WHITE MEASUREMENT NOISE STAYS.** `graphs/27`, `exp23`. 8/8 seeds, 2026-09-09.
+
+The supervisor's EMT simulation carries no white measurement noise, so the question was
+whether ours is costing accuracy. F48/F49 said it should be: the noise, not the
+integrator, sets the floor, and the trapezoid's truncation error is five orders below it.
+famU/famV are famO/famR regenerated with `--no_white_noise` at the SAME `--lhs_seed`
+(22 and 21). `noise` is drawn *before* the flag is tested in `_grid_phases`, so the RNG
+stream is untouched and the pairs are bit-identical apart from the noise term — verified
+on an 8-run pair: `kp`, `ki`, `fault_kind`, `lhs_samples` all bit-equal, `Va` differing by
+exactly 0.05000 pu.
+
+Every model scored on BOTH truths, same freshly generated trajectories, (Kp,Ki)=(25,300).
+Never a per-family validation split — famU's split is a split of the *noise-free* dataset
+and famO's of the noisy one, and reading those against each other is F59/F61 exactly.
+
+| trained on | scored on noise-free | scored on noisy |
+|---|---|---|
+| famU (no noise) — limiter + gains | 1.118e-3 · 0.89x | 1.766e-2 · **13.98x** |
+| famO (noise) — limiter + gains | 1.138e-3 · 0.90x | **1.263e-3 · 1.00x** |
+| famV (no noise) — unlimited, fixed | 9.797e-5 · 0.49x | 7.823e-3 · **38.78x** |
+| famR (noise) — unlimited, fixed | 1.562e-4 · 0.77x | **2.017e-4 · 1.00x** |
+
+**Read the left column — that is the like-for-like question, both models on the same
+clean truth. Removing the noise buys 1.02x on the deliverable configuration and 1.59x on
+the simple one.** Less than depth buys (2.0-2.4x, F66). And the noise-trained models are
+*better* on clean truth than on their own (0.90x, 0.77x), so keeping the noise costs
+nothing at deployment and buys 14-39x of protection if the deployment has any stochastic
+component at all. **Decision: keep it.** Not a close call.
+
+**THE PRE-REGISTRATION WAS WRONG AND IS RECORDED AS WRONG.** `hpc/exp23_no_white_noise.txt`
+predicted "(1) improves by more than 2x -- the noise floor is the binding constraint per
+F49 ... further than any architecture change did". It improved by 1.02x where it matters.
+Prediction (2) — "degrades badly, plausibly worse than the 5-9x that removing faults
+cost" — was right: 14x and 39x, and for the same reason as F62. A noise-free model has
+never seen noisy `Va,Vb,Vc`, exactly as a fault-free model had never seen a sag.
+
+**WHY THE HYPOTHESIS LOOKED SO GOOD AND STILL FAILED — this is the transferable part.**
+The noise *does* set a floor on the physics residual, precisely as remembered:
+
+| | median `r1` | `val_th`/`train_th` |
+|---|---|---|
+| famU / famO | 2.0e-3 vs 1.2e-2 — **6x lower** | 2.7 vs 1.6 |
+| famV / famR | 2.7e-4 vs 8.0e-3 — **30x lower** | **13.3** vs 1.5 |
+
+**A 30x improvement in the physics residual produced a 1.59x improvement in deployed
+angle error.** The residual is a training diagnostic, not a proxy for the deliverable
+metric, and this is the sharpest demonstration of that gap in the project — sharper than
+F45's per-window-vs-deployed split, because here the two move by different *orders of
+magnitude*. The widening `val`/`train` ratio says why: the white noise was acting as data
+augmentation. famV fits its training split 2.6x harder than famR and generalises worse
+for it. Removing the noise did not remove a floor; it removed a regulariser.
+
+**Caveats, stated because the number will get quoted.** The noise is +/-0.05 pu, 5% of
+nominal — the 14-39x is the cost at FULL amplitude, and an intermediate noise level lands
+between, though on the same side. famU early-stopped at ~350 epochs against famO's ~640;
+its train *and* val losses were already below famO's when it stopped, so it converged
+rather than being cut short, but it is an uncontrolled difference between the arms. One
+architecture (L2_w64), one operating point, 4 seeds x 12 runs per cell. Deliberately not
+followed up at L4_w64: the answer is "keep the noise", and re-testing capacity on a
+configuration that is not going to ship is a second full sweep for nothing.
+
+Also verified while building this: `simulate_batch`'s `scheme="trapezoid"` falls through
+to the `freq_limit is not None` branch, so the famU/famO truth really is the clamped ODE
+and not silently the unlimited one.
+
 ### F67 — **exp17's physics block, and one result that contradicts F55.** All 4/4 seeds.
 
 Every family below is at the DEFAULT architecture (L2_w64), and each is scored on its
@@ -3482,17 +3547,27 @@ record of what was predicted to matter versus what actually did.
 | 8 | 3 seeds x best config | **DONE, 6 seeds** on famD, plus 16 on the famB reference arm |
 | 9 | shorter window (0.5 s / 5 windows) | **SUPERSEDED** by the full W sweep: W=40/50/100 tied, W=10 and W=20 worse (F45) |
 
-## Stage status — updated 2026-08-25
+## Stage status — updated 2026-09-09
 
-Stage 11 (write-up) was reached on 2026-08-20 and the original scope is CLOSED. Two
+Stage 11 (write-up) was reached on 2026-08-20 and the original scope is CLOSED. Three
 things arrived after it:
 
 ```
 exp16  faults on/off, gain-box width      DONE   F62. Both predictions failed; keep
                                                  faults, keep the wide box. graphs/22
-exp17  Siemens frequency limiter          RUNNING  100 jobs, array 29224784, submitted
-       + the depth/width capacity grid              2026-08-25 15:20. F64, F63.
+exp17  Siemens frequency limiter          DONE   F65, F66, F67. graphs/24, 25, 26.
+       + the depth/width capacity grid            The L4_w128 frontier is still on the
+                                                  cluster (array 29348441, queue milan).
+exp23  white noise on/off                 DONE   F68. The prediction failed again; keep
+                                                 the noise. graphs/27
 ```
+
+**Three of the last four pre-registrations were wrong** (exp16's two, exp23's first), and
+every one was wrong in the same direction: a change that *should* have helped by theory
+did nothing, while the cost of the corresponding distribution shift was real and large.
+That is the pattern to expect from anything else that "obviously" simplifies the training
+distribution — the model pays for what it has not seen, and the training-time diagnostic
+that motivated the simplification is not the deliverable metric.
 
 **exp17 is on branch `Siemens_Request`, not `main`.** It changes the physics: the PLL now
 limits its own frequency to `omega_0 +/- 2*pi*3` rad/s. Every number elsewhere in this

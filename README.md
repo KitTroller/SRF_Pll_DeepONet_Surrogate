@@ -26,6 +26,10 @@ condition, so a 0.5 s trajectory is 40 handovers with no ground truth anywhere i
 > unlimited problem, so the deployed model has headroom nobody had looked for. On the
 > LIMITED families, two extra layers are worth **2.2-2.4×** — confirmed independently on
 > famN (fixed gains) and famO (tunable gains), against **1.1×** on the unlimited control.
+> **F68** closes the white-noise question: training without the measurement noise buys
+> **1.02×** on the deliverable configuration and costs **14-39×** if any noise is present,
+> so the noise stays. Its 6-30× improvement in the *physics residual* never reaches
+> deployed error — the noise was a regulariser, not a floor (`graphs/27`).
 > Generate a limited family with
 > `--freq_limit 18.8496`; omit it and every path is bit-identical to the unlimited one
 > (verified to 8.2e-13 rad).
@@ -139,6 +143,7 @@ A setting is only justified if the alternatives were measured. These were.
 
 | **removing faults from training** | nothing on clean input (medians within 1.02x at W=40 on a common test set) | and it **costs 5-9x on voltage sags**, because a sag moves `Va,Vb,Vc` into amplitudes the model never saw. Phase jumps are unaffected (~1.25x for everyone) — a jump re-phases a still-clean sinusoid. Strictly worse | **F62** · `graphs/22` |
 | **narrowing the `Kp`/`Ki` box** | nothing (famM ties famL everywhere on a common test) | the apparent 1.36x gain was an easier validation split. The gains-as-inputs cost is about having two extra input dimensions at all, not about how wide they are | **F62** · `graphs/22` |
+| **removing the white measurement noise** | **1.02x** on the deliverable config, 1.59x on the simple one, both on a common test set | and it costs **14-39x** if any noise is present. The physics residual really does drop 6-30x — but that never reaches deployed error, because the noise was acting as a *regulariser*, not as a floor: the val/train gap goes 1.5 → 13.3 without it | **F68** · `graphs/27` |
 
 ### If you want something different — the levers, in order of usefulness
 
@@ -214,6 +219,13 @@ where a flag overrides it.
 | `famR_W40` | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famR --W 40 --n_runs 5000 --lhs_seed 21` |
 | `famS_W40` = **famN, draw 2** | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famS --W 40 --n_runs 5000 --lhs_seed 25 --freq_limit 18.8496` |
 | `famT_W40` = **famR, draw 2** | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famT --W 40 --n_runs 5000 --lhs_seed 25` |
+| `famU_W40` = **famO, no noise** | 5000 | 5000 / 100 µs | ±20 | **yes** | yes | `generate_family.py --stem famU --W 40 --n_runs 5000 --lhs_seed 22 --gains --freq_limit 18.8496 --no_white_noise` |
+| `famV_W40` = **famR, no noise** | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famV --W 40 --n_runs 5000 --lhs_seed 21 --no_white_noise` |
+
+**`famU`/`famV` carry no white measurement noise** and reuse famO's and famR's seeds on
+purpose: the noise is *drawn* before the flag is tested in `_grid_phases`, so the RNG
+stream is identical and each pair differs by the noise term and nothing else. They exist
+only to answer F68 — the answer was **keep the noise**, so they are not deliverables.
 
 **`famS`/`famT` are not new configurations.** They are byte-for-byte the same recipe as
 `famN`/`famR`, re-drawn at `--lhs_seed 25` instead of 21, so that F65's "the limiter costs
@@ -492,6 +504,8 @@ intermediate, so a stale figure is always one command away from being correct. R
 | 23 | **speed vs accuracy** for the four deliverable models — both trades on one axis | `python src/speed_accuracy.py` |
 | 24 | what the frequency limiter costs, split by whether the window saturated (**branch `Siemens_Request`**) | `python src/limiter_report.py` |
 | 25 | one run solved with and without the limiter, with the clamp visible (**branch `Siemens_Request`**) | `python src/limiter_trace.py` |
+| 26 | depth × interior width, on a limited and an unlimited family (**branch `Siemens_Request`**) | `python src/capacity_grid.py` |
+| 27 | white noise on/off, every model scored on **both** truths (**branch `Siemens_Request`**) | `python src/noise_report.py` |
 | Tunable_Kp_Ki_tests/01-02 | model menu; theta and omega split | `python src/model_menu.py` |
 | Tunable_Kp_Ki_tests/03 | error across the whole `(Kp, Ki)` box, gains vs fixed | `python src/gain_sensitivity.py runs/<gains tag>.pth` |
 | Tunable_Kp_Ki_tests/04-06 | prediction vs truth per model (W=40, W=20), plus the gain showcase | `python src/contenders.py` |
