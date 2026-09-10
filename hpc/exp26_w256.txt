@@ -1,0 +1,64 @@
+# exp26 -- width 256 at depth 2 and 3, on famN, famO and famR. 24 jobs.
+#
+#     sh hpc/submit.sh hpc/exp26_w256.txt w256 hpc/job_sweep_w256.sh
+#
+# NO GENERATION NEEDED: famN_W40, famO_W40 and famR_W40 are already on the cluster.
+#
+# WHY DEPTH 4 IS ABSENT, and it is not only the wall clock. Decomposing F66's "depth is
+# worth 2.0-2.4x" layer by layer shows the whole effect is the THIRD layer:
+#
+#                       RMS L2->L3    RMS L3->L4    WORST-CASE L3->L4
+#     famN w64/w128     2.02/1.86x    1.07/1.12x       0.65x / 1.08x
+#     famO w64/w128     2.22/2.16x    1.08/1.09x       0.65x / 0.87x
+#     famR w64/w128     1.13/0.98x    0.94/1.10x       1.10x / 0.97x
+#
+# The fourth layer buys 7-12% on RMS -- inside the 1.6x seed spread of F24 -- costs 23%
+# more compute (39.2 vs 31.8 ms/simulated-second), and makes PEAK error 1.5x WORSE at
+# w64 in both limited families. A frequency-limiter compliance claim is a peak claim, so
+# the fourth layer is not merely marginal there, it is the wrong direction. L4_w256 would
+# also need ~75 h at 8 cores in the tail, which no queue here offers.
+#
+# WHY w256 IS WORTH RUNNING when the fourth layer is not: width has not saturated. Each
+# doubling is still paying ~1.5x on the limited families, it pays on famR too so it is
+# not limiter-specific, and unlike depth it KEEPS its advantage on worst case
+# (famO L3_w128: 0.27x RMS, 0.28x max). Cost scales far better than parameter count
+# suggests -- 3.8x the parameters cost 1.80x the wall time, because 40 predict_window
+# calls per run are dominated by per-call overhead at these sizes. L4_w128 is still 79x
+# cheaper than the trapezoid solver at batch 1.
+#
+# ARCHITECTURE ASIDE, EVERYTHING MATCHES THE EXISTING GRID: same datasets, same
+# --split_seed 0, same --epochs 1200 --patience 40, same --n_eval_runs 150, 4 seeds.
+# Only --width moves, so these cells drop straight into capacity_grid.py.
+#
+# PRE-REGISTERED: w128 -> w256 gives another 1.3-1.5x on RMS for famN and famO and
+# roughly 1.1-1.2x for famR, and unlike the fourth layer it holds up on worst case. If
+# w256 comes back FLAT, width has saturated and L3_w128 is the deliverable; that is a
+# perfectly good answer and the reason to run it rather than extrapolate the trend.
+# WATCH THE EPOCH CAP: the w128 cells needed 833-992 epochs against a 1200 cap, and
+# wider networks have run longer at every step so far. Two or more seeds at
+# epochs_run == 1200 means the cell is truncated, not converged.
+
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 2 --width 256 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 2 --width 256 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 2 --width 256 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 2 --width 256 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 3 --width 256 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 3 --width 256 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 3 --width 256 --results_dir sweeps_famN_W40_cap
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 3 --width 256 --results_dir sweeps_famN_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 2 --width 256 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 2 --width 256 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 2 --width 256 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 2 --width 256 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 3 --width 256 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 3 --width 256 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 3 --width 256 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 3 --width 256 --results_dir sweeps_famO_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 2 --width 256 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 2 --width 256 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 2 --width 256 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 2 --width 256 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --n_layers 3 --width 256 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 3 --width 256 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 3 --width 256 --results_dir sweeps_famR_W40_cap
+--dataset famR_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 3 --width 256 --results_dir sweeps_famR_W40_cap

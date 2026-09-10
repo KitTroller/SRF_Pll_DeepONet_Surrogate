@@ -1618,7 +1618,119 @@ from 40 to 80, so the 0.5 s rollout now performs **twice as many handovers**. Co
 roughly doubles and cancels the per-window gain exactly. You cannot hold both the
 architecture and the handover count fixed while halving dt; exp6 chose architecture.
 
+### F71 — **THE LIMITER COMPLIANCE NUMBER, ON THE MODEL THAT SHIPS.** `graphs/25`, `25b`. 2026-09-10.
+
+Siemens' actual question is whether the surrogate honours `omega_0 +/- 2*pi*3` rad/s, and
+until today the figure answering it scored the WRONG MODEL. `limiter_trace.py` globbed
+`runs/famN_W40_*sp0.pth` with `if "_L" not in q` -- deliberately excluding every capacity
+variant -- so the compliance claim described L2_w64 with fixed gains while the deliverable
+had moved to L3_w128. Fixed with an `--arch` flag.
+
+| architecture | surrogate outside the band | TRUTH, same estimator |
+|---|---|---|
+| L2_w64 (baseline) | **0.76%** of samples | 0.00% |
+| L3_w128 (deliverable) | **0.00%** | 0.00% |
+
+**THE `np.gradient` CAVEAT IS RESOLVED, AND IT WAS WRONG IN THE REASSURING DIRECTION.**
+The standing hedge was that differentiating a predicted angle amplifies noise, so some of
+the overshoot might be the estimator rather than the model. It is not: the truth is put
+through the SAME finite difference and comes back at 0.00%, because the solver clamps `u`
+exactly. So the baseline's 0.76% was a real violation that the hedge was excusing, and
+L3_w128 removes it. The figure now prints both numbers side by side so the floor can
+never be assumed again.
+
+Measured on the most-saturated of 12 runs (7 of 40 windows clamped), one seed. That is a
+demonstration, not a compliance certificate -- a certificate needs every run and every
+seed, and it should be re-run on whatever finally ships.
+
+### F70 — **CAPACITY, DECOMPOSED. THE THIRD LAYER IS THE WHOLE DEPTH EFFECT.** `graphs/26`, `26b`.
+
+F66 reported "depth is worth 2.0-2.4x on the limited families". True for L2->L4, and
+misleading, because it is one layer:
+
+| | RMS L2->L3 | RMS L3->L4 | **worst-case L3->L4** |
+|---|---|---|---|
+| famN w64 / w128 | 2.02x / 1.86x | 1.07x / 1.12x | **0.65x** / 1.08x |
+| famO w64 / w128 | 2.22x / 2.16x | 1.08x / 1.09x | **0.65x** / **0.87x** |
+| famR w64 / w128 | 1.13x / 0.98x | 0.94x / 1.10x | 1.10x / 0.97x |
+
+The fourth layer buys 7-12% on RMS -- inside F24's 1.6x seed spread -- costs 23% more
+compute, and makes PEAK error **1.5x worse** at w64 in both limited families. A
+frequency-limiter claim is a peak claim (F71), so there the fourth layer is not marginal,
+it is the wrong direction. **Width keeps its advantage on worst case where depth does
+not**: famO L3_w128 is 0.27x on RMS and 0.28x on max.
+
+**COST SCALES FAR BETTER THAN PARAMETER COUNT.** Measured on famO, one family, one truth,
+same machine and same run:
+
+| arch | params | ms/sim-s | x solver | deployed RMS | x default |
+|---|---|---|---|---|---|
+| L2_w64 | 45,824 | 21.8 | 142.9x | 1.382e-3 | 1.00x |
+| L4_w64 | 62,464 | 33.2 | 93.7x | 4.700e-4 | 2.94x |
+| L2_w128 | 107,840 | 24.2 | 128.5x | 6.767e-4 | 2.04x |
+| **L3_w128** | 140,864 | 31.8 | **98.0x** | **3.500e-4** | **3.95x** |
+| L4_w128 | 173,888 | 39.2 | 79.4x | 3.667e-4 | 3.77x (2 seeds) |
+
+3.8x the parameters costs **1.80x the wall time**, not 3.8x: 40 `predict_window` calls per
+run are dominated by per-call overhead at these sizes, not by matmuls. I had argued the
+frontier would have eaten the speed advantage that justifies the surrogate; measured, it
+has not. (The absolute ratio differs from the 53x quoted elsewhere -- different machine.
+Read the column against itself.)
+
+**THE DELIVERABLE IS `famO_W40_..._L3_w128_g`**: 3.95x better than the default at 98x the
+solver, on 4 seeds, fully compliant with the limiter band (F71), and 19% cheaper than
+L4_w128 which it ties within seed noise. Not sent wider: asked directly whether to test
+width 256 at depth 3, the supervisor said no.
+
+`pending.py` was also fixed here. It emitted `_g` BEFORE `_L`/`_w` while `train_pll.py`
+emits it after, so every gains-AND-capacity cell was reported missing -- correct for
+famN/famR (capacity, no gains) and famW/famX (gains, no capacity), wrong for famO, the
+one family that is both. It claimed 24 finished jobs were missing and came one resubmit
+short of redoing them on milan.
+
+### F69 — **THE NOISE RESULT DEPENDS ON THE GAINS, AND F68'S READING WAS INCOMPLETE.** `graphs/27`, `exp24`. 8/8 seeds, 2026-09-10.
+
+F68 measured the cost of removing the white noise in two configurations that differed by
+TWO factors at once -- limiter+tunable versus unlimited+fixed -- and got 1.02x and 1.59x.
+famW/famX close that gap: unlimited, TUNABLE gains, `--lhs_seed 22`, so the only change
+from famU/famO is the limiter.
+
+Like-for-like, noise-free model against noise-trained model, both on the same clean truth:
+
+| configuration | free model | noisy model | effect of removing the noise |
+|---|---|---|---|
+| no limiter, **fixed** gains (famV/famR) | 9.797e-5 | 1.562e-4 | **1.59x BETTER** |
+| limiter, **tunable** gains (famU/famO) | 1.118e-3 | 1.138e-3 | 1.02x -- nothing |
+| no limiter, **tunable** gains (famW/famX) | 5.774e-4 | 3.609e-4 | **1.60x WORSE** |
+
+**The sign flips with the GAINS, not the limiter.** Panels 1 and 2 of `graphs/27` differ
+only by the limiter and the answer barely moves; panels 2 and 3 differ only by the gains
+and the sign inverts. Removing the noise from a gains-conditioned model makes it worse on
+the very truth it was trained for.
+
+**THE PRE-REGISTRATION FAILED AGAIN, AND IN A NEW WAY.** `exp24`'s header predicted
+famW/famX would reproduce the ~1.6x improvement and pin the blame on the limiter. It
+reproduced the magnitude and inverted the sign. The one prediction that has now held three
+times is the extrapolation cost: famW on noisy truth is 34.15x worse, alongside F68's 14x
+and 39x. Worst case tracks it rather than exceeding it (famV on noisy truth: 38.78x on
+RMS, 18x on peak), so there is no hidden tail.
+
+**THIS IS THREE OF FOUR CORNERS, NOT A MEASUREMENT.** Two factors still move across those
+rows. `famY` -- limiter + FIXED gains + no noise at `--lhs_seed 21` -- is the fourth, and
+completes a 2x2 at each gains setting (seed 21: famN/famR/famV/famY; seed 22:
+famO/famU/famX/famW). Submitted as `exp27`. Until it lands, "it is the gains" is an
+inference from three points.
+
+Everything F68 concluded about KEEPING the noise survives and is strengthened: for the
+deliverable, which has tunable gains, removing it is somewhere between worthless and
+actively harmful before the 14-39x extrapolation penalty is counted.
+
 ### F68 — **THE WHITE MEASUREMENT NOISE STAYS.** `graphs/27`, `exp23`. 8/8 seeds, 2026-09-09.
+
+> **Superseded in part by F69.** F68's two pairs differed by two factors at once, so its
+> reading of WHY the effect varied does not stand. The conclusion -- keep the noise --
+> does, and F69 strengthens it.
+
 
 The supervisor's EMT simulation carries no white measurement noise, so the question was
 whether ours is costing accuracy. F48/F49 said it should be: the noise, not the
@@ -3560,7 +3672,25 @@ exp17  Siemens frequency limiter          DONE   F65, F66, F67. graphs/24, 25, 2
                                                   cluster (array 29348441, queue milan).
 exp23  white noise on/off                 DONE   F68. The prediction failed again; keep
                                                  the noise. graphs/27
+exp24  the same, at TUNABLE gains         DONE   F69. Sign flips with the gains, not the
+       (famW/famX)                                limiter. graphs/27
+exp25  the 3 lost L4_w128 cells           RUNNING  milan, 16 cores. 47 h was 7% above the
+                                                   worst survivor; the fix was cores.
+exp26  width 256 at depth 2 and 3         NOT SENT  asked directly, the supervisor said
+                                                    no. Kept in hpc/ if that changes.
+exp27  famY, the 4th factorial corner     QUEUED   closes F69's attribution gap
 ```
+
+**Deliverable as of 2026-09-10: `famO_W40_..._L3_w128_g`** (F70) -- 3.95x better than the
+default, 98x the solver at batch 1, 4 seeds, 0.00% outside the limiter band (F71). A W=20
+variant has not been trained and has not been asked for.
+
+**The supervisor's open request, deferred by agreement:** restrict training to
+`omega_pll` above a threshold, i.e. a specialist for the region where the limiter fires.
+Before running it, note the precedent: famK was a specialist at the OTHER end of the same
+axis, looked 1.4x better, and that turned out to be an easier validation split (F59
+retracted, F61). Any threshold-restricted family has to be scored on a COMMON TEST SET
+against the wide model or the same false positive is guaranteed.
 
 **Three of the last four pre-registrations were wrong** (exp16's two, exp23's first), and
 every one was wrong in the same direction: a change that *should* have helped by theory

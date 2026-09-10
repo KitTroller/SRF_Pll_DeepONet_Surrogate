@@ -26,10 +26,16 @@ condition, so a 0.5 s trajectory is 40 handovers with no ground truth anywhere i
 > unlimited problem, so the deployed model has headroom nobody had looked for. On the
 > LIMITED families, two extra layers are worth **2.2-2.4×** — confirmed independently on
 > famN (fixed gains) and famO (tunable gains), against **1.1×** on the unlimited control.
-> **F68** closes the white-noise question: training without the measurement noise buys
-> **1.02×** on the deliverable configuration and costs **14-39×** if any noise is present,
-> so the noise stays. Its 6-30× improvement in the *physics residual* never reaches
-> deployed error — the noise was a regulariser, not a floor (`graphs/27`).
+> **F68/F69** close the white-noise question: the noise stays. Removing it helps only
+> with FIXED gains (1.59×); with the deliverable's TUNABLE gains it does nothing (1.02×)
+> or actively hurts (1.60× worse), and it always costs **14-39×** if any noise is present.
+> Its 6-30× improvement in the *physics residual* never reaches deployed error — the
+> noise was a regulariser, not a floor (`graphs/27`).
+> **F70** refines F66: the whole depth effect is the **third** layer (2.0-2.2×); the
+> fourth adds 7-12% on RMS and makes peak error **1.5× worse**. The deliverable is
+> **`famO_W40_…_L3_w128_g`** — 3.95× better than the default at **98× the solver**, and
+> **F71** measures it at **0.00%** outside the ±3 Hz band where the L2_w64 baseline was
+> at 0.76% (`graphs/25b`).
 > Generate a limited family with
 > `--freq_limit 18.8496`; omit it and every path is bit-identical to the unlimited one
 > (verified to 8.2e-13 rad).
@@ -107,8 +113,8 @@ Each row is a decision that was measured, not assumed. `F##` are findings in
 | **`F` / `max_freq`** | **4 / 503** | what matters is **`max_freq/F` = 126 rad/s**, the *lowest* feature. Three combs sharing a lowest feature of 126 tie exactly, so the top is irrelevant | too low → degenerate with the raw `t` the trunk already has (`mf=126,F=4` starts at 31.5 rad/s = 0.06 cycles/window, the worst arm ever measured); too high → above the signal, which is 99.98% below 126 rad/s | **F31, F50, F51, F56** · `graphs/10, 20` |
 | **`W`** | **40** (12.5 ms) | W=40/50/100 are statistically tied; 10 and 20 are worse | **W=20 halves the network calls** (80 → 40 per simulated second, 19.4 → 10.9 ms/sim-s) for **1.88×** the error. A real lever if speed matters | **F32, F45, F58, F60** · `graphs/11` |
 | **`hidden_dim`** (latent) | **64** | flat from 32 to 128 on `val_th` and `per_window_rms`. This is the **latent contraction** width — `sizes[-1]` — and nothing else | buys **handover stability, not operator quality**: `compounding` 5.9 (h32) → 3.4 (h128) | **F46** · `graphs/17` |
-| **`width`** (interior) | **64**, and it is **too small** | never tested until `exp17`. On the plain unlimited problem, w32 → w128 spans a factor of **3.1** in deployed error | wider is better everywhere measured so far, at ~2.4× the compute per epoch for w128. `w32` is worse in every family, so there is **no spare capacity to trim** | **F66** · `graphs/26` |
-| **`n_layers`** (depth) | **2**, and **too shallow for a piecewise target** | never tested until `exp17`. L2 → L4 is worth **2.0×** with the frequency limiter and only **1.1×** without it — depth is what represents the clamp's kink | it improves the operator (`per_window_rms` 2.6×) and *degrades* the handover (`compounding` 3.38 → 4.11). The opposite trade to width | **F66** · `graphs/26` |
+| **`width`** (interior) | **128** for the deliverable; the 64 default is **too small** | never tested until `exp17`. On the plain unlimited problem, w32 → w128 spans a factor of **3.1** in deployed error, and unlike depth it **keeps its advantage on worst case** (famO L3_w128: 0.27× RMS, 0.28× max) | wider is better everywhere measured, at ~2.4× the compute per epoch for w128 — but only **1.80× the wall clock for 3.8× the parameters**, since per-call overhead dominates. `w32` is worse in every family, so there is **no spare capacity to trim**. w256 untested: asked, and the supervisor said no | **F66, F70** · `graphs/26, 26b` |
+| **`n_layers`** (depth) | **3**. Not 2 (too shallow for a piecewise target) and not 4 | L2 → L3 is worth **2.0–2.2×** with the frequency limiter and ~1.1× without it — depth is what represents the clamp's kink. **The third layer is the whole effect**: L3 → L4 adds 7-12% on RMS, inside the seed spread | the fourth layer makes **peak error 1.5× worse** at w64 in both limited families and costs 23% more compute, so it is rejected. Depth also improves the operator (`per_window_rms` 2.6×) while *degrading* the handover (`compounding` 3.38 → 4.11) — the opposite trade to width | **F66, F70** · `graphs/26, 26b` |
 | **`sensors`** | **5000** (dt = 100 µs) | halving `dt` *appears* to buy 1.58×, but that is the **noise model shrinking with `dt`**, not better integration. At fixed noise spectral density the error is flat | the trapezoid's own truncation error is **5 orders of magnitude** below the sensor noise — integration was never the limit. Move to 10000 to match a 50 µs EMT step, not for accuracy | **F48, F49** · `graphs/19` |
 | **`n_runs`** | **5000** | 1000 → 5000 halved the train/val gap (2.60 → 1.45) and improved `val_th` 1.83× | 5000 → 10000 gives **no measurable improvement**, at 2× the data *and* 2× the epochs. The gap sits at ~1.45; that is where this setup lives, not a deficit | **F22, F55** |
 | **residual form** | **eq-4** (stored `Vq`) | its null space is exactly `(θ₀, ω₀)`, so it is pure derivative supervision and **cannot** be satisfied by a wrong solution | eq-6 (`Vq` from the predicted angle) lets a *self-consistent wrong angle* zero the residual. Never better, up to **8× worse**, degrading monotonically with `w_phys` | **F16, F53** · `graphs/21` |
@@ -143,7 +149,8 @@ A setting is only justified if the alternatives were measured. These were.
 
 | **removing faults from training** | nothing on clean input (medians within 1.02x at W=40 on a common test set) | and it **costs 5-9x on voltage sags**, because a sag moves `Va,Vb,Vc` into amplitudes the model never saw. Phase jumps are unaffected (~1.25x for everyone) — a jump re-phases a still-clean sinusoid. Strictly worse | **F62** · `graphs/22` |
 | **narrowing the `Kp`/`Ki` box** | nothing (famM ties famL everywhere on a common test) | the apparent 1.36x gain was an easier validation split. The gains-as-inputs cost is about having two extra input dimensions at all, not about how wide they are | **F62** · `graphs/22` |
-| **removing the white measurement noise** | **1.02x** on the deliverable config, 1.59x on the simple one, both on a common test set | and it costs **14-39x** if any noise is present. The physics residual really does drop 6-30x — but that never reaches deployed error, because the noise was acting as a *regulariser*, not as a floor: the val/train gap goes 1.5 → 13.3 without it | **F68** · `graphs/27` |
+| **removing the white measurement noise** | **1.02x** with the limiter and tunable gains, and **1.60x WORSE** with tunable gains and no limiter. It helps only with FIXED gains (1.59x) | and it costs **14-39x** if any noise is present. The physics residual really does drop 6-30x — but that never reaches deployed error, because the noise was acting as a *regulariser*, not as a floor: the val/train gap goes 1.5 → 13.3 without it | **F68, F69** · `graphs/27` |
+| **a 4th interior layer** (L3 → L4) | 7-12% on RMS, inside the 1.6x seed spread | and it makes **peak error 1.5x worse** at w64 in both limited families, at 23% more compute. All of "depth is worth 2.0-2.4x" is the **third** layer | **F70** · `graphs/26, 26b` |
 
 ### If you want something different — the levers, in order of usefulness
 
@@ -221,11 +228,21 @@ where a flag overrides it.
 | `famT_W40` = **famR, draw 2** | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famT --W 40 --n_runs 5000 --lhs_seed 25` |
 | `famU_W40` = **famO, no noise** | 5000 | 5000 / 100 µs | ±20 | **yes** | yes | `generate_family.py --stem famU --W 40 --n_runs 5000 --lhs_seed 22 --gains --freq_limit 18.8496 --no_white_noise` |
 | `famV_W40` = **famR, no noise** | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famV --W 40 --n_runs 5000 --lhs_seed 21 --no_white_noise` |
+| `famW_W40` = **famX, no noise** | 5000 | 5000 / 100 µs | ±20 | **yes** | yes | `generate_family.py --stem famW --W 40 --n_runs 5000 --lhs_seed 22 --gains --no_white_noise` |
+| `famX_W40` | 5000 | 5000 / 100 µs | ±20 | **yes** | yes | `generate_family.py --stem famX --W 40 --n_runs 5000 --lhs_seed 22 --gains` |
+| `famY_W40` = **famN, no noise** | 5000 | 5000 / 100 µs | ±20 | no | yes | `generate_family.py --stem famY --W 40 --n_runs 5000 --lhs_seed 21 --freq_limit 18.8496 --no_white_noise` |
 
-**`famU`/`famV` carry no white measurement noise** and reuse famO's and famR's seeds on
-purpose: the noise is *drawn* before the flag is tested in `_grid_phases`, so the RNG
-stream is identical and each pair differs by the noise term and nothing else. They exist
-only to answer F68 — the answer was **keep the noise**, so they are not deliverables.
+**`famU`/`famV`/`famW`/`famY` carry no white measurement noise** and reuse the seed of the
+family they pair with: the noise is *drawn* before the flag is tested in `_grid_phases`,
+so the RNG stream is identical and each pair differs by the noise term and nothing else.
+They exist only to answer F68/F69 — the answer was **keep the noise**, so none of them is
+a deliverable. Together they form a **2×2 in (limiter × noise) at each gains setting**:
+
+| | seed 21, FIXED gains | | seed 22, TUNABLE gains | |
+|---|---|---|---|---|
+| | limiter | no limiter | limiter | no limiter |
+| **noise** | famN | famR | famO | famX |
+| **no noise** | famY | famV | famU | famW |
 
 **`famS`/`famT` are not new configurations.** They are byte-for-byte the same recipe as
 `famN`/`famR`, re-drawn at `--lhs_seed 25` instead of 21, so that F65's "the limiter costs
@@ -504,8 +521,10 @@ intermediate, so a stale figure is always one command away from being correct. R
 | 23 | **speed vs accuracy** for the four deliverable models — both trades on one axis | `python src/speed_accuracy.py` |
 | 24 | what the frequency limiter costs, split by whether the window saturated (**branch `Siemens_Request`**) | `python src/limiter_report.py` |
 | 25 | one run solved with and without the limiter, with the clamp visible (**branch `Siemens_Request`**) | `python src/limiter_trace.py` |
+| 25b | the same trace on the **deliverable** architecture, with the estimator's own floor printed | `python src/limiter_trace.py --arch _L3_w128 --out 25b_limiter_trace_L3w128.png` |
 | 26 | depth × interior width, on a limited and an unlimited family (**branch `Siemens_Request`**) | `python src/capacity_grid.py` |
-| 27 | white noise on/off, every model scored on **both** truths (**branch `Siemens_Request`**) | `python src/noise_report.py` |
+| 26b | the same grid scored on **worst case** rather than RMS — depth's gain largely vanishes, width's does not | `python src/capacity_grid.py --metric rollout_full_max --out 26b_capacity_worstcase.png` |
+| 27 | white noise on/off × limiter × gains, every model scored on **both** truths (**branch `Siemens_Request`**) | `python src/noise_report.py` |
 | Tunable_Kp_Ki_tests/01-02 | model menu; theta and omega split | `python src/model_menu.py` |
 | Tunable_Kp_Ki_tests/03 | error across the whole `(Kp, Ki)` box, gains vs fixed | `python src/gain_sensitivity.py runs/<gains tag>.pth` |
 | Tunable_Kp_Ki_tests/04-06 | prediction vs truth per model (W=40, W=20), plus the gain showcase | `python src/contenders.py` |

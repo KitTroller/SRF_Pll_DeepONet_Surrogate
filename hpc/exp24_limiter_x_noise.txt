@@ -1,0 +1,56 @@
+# exp24 -- the limiter x white-noise 2x2, at TUNABLE gains throughout. 8 jobs.
+#
+# F68 answered "does removing the white noise help" with two pairs, and the two pairs
+# disagreed: 1.02x on famU/famO (limiter, tunable gains) and 1.59x on famV/famR (no
+# limiter, FIXED gains). Two factors moved between those pairs, so the disagreement
+# cannot be attributed. This closes the grid with gains held ON and --lhs_seed held at
+# 22, so the only things that vary are the limiter and the noise:
+#
+#                     limiter        no limiter
+#     noise           famO (have)    famX  <- new
+#     no noise        famU (have)    famW  <- new
+#
+# All four share --lhs_seed 22 and --gains. `noise` is drawn BEFORE the flag is tested in
+# `_grid_phases`, and the limiter acts inside the integrator AFTER `_grid_phases`, so all
+# four have bit-identical Va/Vb/Vc modulo the noise term and identical (Kp,Ki) draws.
+# Every cell-to-cell comparison in the grid is therefore paired.
+#
+# WHY NOT JUST USE famJ_W40, which is already unlimited + gains + noise. Because famJ was
+# generated with NO --lhs_seed. It is a different, unreproducible LHS draw, so famW vs
+# famJ would confound the limiter with the draw -- the same defect that made F65's first
+# 2.12x unquotable until famS/famT replicated it.
+#
+# ARCHITECTURE IS THE DEFAULT L2_w64 and epochs stay at 1200, matching famO/famU/famV/famR
+# exactly. F66 showed L2_w64 is not the best available, but changing it here would make
+# the two existing cells incomparable and the grid pointless.
+#
+# WATCH THE EPOCH CAP. famV (unlimited, no noise, fixed gains) ran 992-1200 epochs and
+# seed 3 hit the 1200 cap exactly -- removing the noise lets training keep improving for
+# longer. famW is the same corner plus gains, so it is the most likely to cap. If 2+ seeds
+# come back with epochs_run == 1200, the cell is truncated, not converged, and the honest
+# move is to rerun that family at --epochs 2000 rather than to read the number.
+#
+# GENERATE FIRST:
+#   bsub < hpc/job_gen_exp24.sh
+#
+# PRE-REGISTERED, and F68's failure is the reason to write it down before looking:
+#   (a) famW vs famX reproduces the ~1.6x that famV/famR showed, NOT the 1.02x that
+#       famU/famO showed. That would say the LIMITER is what kills the benefit of
+#       removing noise -- plausible mechanically, since the clamp's kink is the part of
+#       the target the network struggles with and noise has nothing to do with it.
+#   (b) famW on NOISY truth degrades by >10x, like both F68 families did. This is the
+#       prediction I have most confidence in; it has now held twice.
+#   (c) famX vs famO replicates F65's limiter cost (~2.1x overall) at tunable gains,
+#       which F67 flagged as never measured.
+# If (a) comes back at ~1.0x instead, the limiter is NOT the explanation and the
+# difference in F68 was the fixed-vs-tunable gains. Either answer is publishable; what
+# was not acceptable was leaving both factors moving at once.
+
+--dataset famW_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famW_W40
+--dataset famW_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famW_W40
+--dataset famW_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famW_W40
+--dataset famW_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famW_W40
+--dataset famX_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famX_W40
+--dataset famX_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famX_W40
+--dataset famX_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famX_W40
+--dataset famX_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famX_W40

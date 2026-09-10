@@ -66,9 +66,14 @@ def tag_for(line):
            + (f"_h{hd}" if hd else "")
            + ("" if arch == "deeponet" else f"_{arch}")
            + ("" if res == "eq4" else f"_{res}")
-           + ("_g" if meta.get("gains", {}).get("enabled") else "")
            + (f"_L{nl}" if nl else "")
-           + (f"_w{wd}" if wd else ""))
+           + (f"_w{wd}" if wd else "")
+           # _g LAST, matching train_pll.py:229. It used to be emitted BEFORE _L/_w, which
+           # is wrong only for gains AND capacity together -- so famN/famR (capacity, no
+           # gains) and famW/famX (gains, no capacity) both reported correctly while every
+           # famO capacity cell was reported missing. Caught 2026-09-10, one resubmit short
+           # of redoing 16 finished w128 jobs on milan.
+           + ("_g" if meta.get("gains", {}).get("enabled") else ""))
     return tag, get("--results_dir", "sweeps")
 
 

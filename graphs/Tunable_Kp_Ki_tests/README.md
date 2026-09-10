@@ -1,5 +1,19 @@
 # PLL DeepONet — models for the EMT co-simulation
 
+> **These eight models implement the UNLIMITED PLL, and this bundle is frozen at
+> 2026-08-21.** The `PLL_Simulator.py` shipped alongside them predates the Siemens
+> frequency limiter, which is correct and deliberate — every checkpoint here was trained
+> on unlimited physics, so an unlimited simulator is its right companion. Do not replace
+> it with a newer `src/PLL_Simulator.py`; that one clamps `dtheta/dt` to
+> `omega_0 +/- 2*pi*3` rad/s and would no longer describe these models.
+>
+> **If you need the frequency limiter, these are not the models.** That work is on branch
+> `Siemens_Request` (families famN-famY, `docs/notes.md` F65-F68) and is not bundled here.
+> All eight below are also the DEFAULT L2_w64 architecture; F66 later found the network
+> under-provisioned, with L3_w128 measuring 3.95x better on the limited families at 98x
+> the solver's speed, so treat the numbers in this table as the August baseline rather
+> than the best available.
+
 Eight models, all **dt = 100 us** (5000 samples per 0.5 s), all trained with voltage sags
 and phase jumps in the data. Every one is a *whole-window operator* applied **recurrently**:
 give it the window's `Va, Vb, Vc` plus the state you handed it, and it returns `theta` and

@@ -45,9 +45,13 @@ def main():
     p.add_argument("--out", default="26_capacity_grid.png")
     p.add_argument("--metric", default="rollout_full_rms")
     p.add_argument("--min_seeds", type=int, default=4,
-                   help="cells with fewer are DROPPED, not plotted with a short bar -- a "
-                        "min/max range over 2 draws is narrower than over 4 by "
-                        "construction, which is how the hidden-dim figure misled once")
+                   help="cells with fewer get their MEDIAN drawn as a hollow marker and "
+                        "no shaded band. The band is the part that lies: a min/max range "
+                        "over 2 draws is narrower than over 4 by construction, which is "
+                        "how the hidden-dim figure misled once. The median of 2 tight "
+                        "draws is worth seeing; the spread of 2 draws is not")
+    p.add_argument("--hide_incomplete", action="store_true",
+                   help="drop under-seeded cells entirely instead of marking them")
     a = p.parse_args()
 
     import matplotlib.pyplot as plt
@@ -64,17 +68,31 @@ def main():
         store[d] = {}
         for w in WIDTHS:
             xs, ys, lo, hi = [], [], [], []
+            px, py, pn = [], [], []                 # under-seeded: median only, no band
             for L in DEPTHS:
                 v = g.get((L, w), [])
-                if len(v) < a.min_seeds:
+                if not v or (a.hide_incomplete and len(v) < a.min_seeds):
                     continue
                 q = sorted(r[a.metric] for r in v)
-                xs.append(L); ys.append(np.median(q)); lo.append(q[0]); hi.append(q[-1])
-                store[d][(L, w)] = np.median(q) / b
-            if not xs:
+                store[d][(L, w)] = (float(np.median(q)) / b, len(v))
+                if len(v) < a.min_seeds:
+                    px.append(L); py.append(np.median(q)); pn.append(len(v))
+                else:
+                    xs.append(L); ys.append(np.median(q)); lo.append(q[0]); hi.append(q[-1])
+            if not xs and not px:
                 continue
-            ax[i].plot(xs, ys, "-o", color=COL[w], lw=2, ms=7, label=f"width {w}")
-            ax[i].fill_between(xs, lo, hi, color=COL[w], alpha=.15)
+            if xs:
+                ax[i].plot(xs, ys, "-o", color=COL[w], lw=2, ms=7, label=f"width {w}")
+                ax[i].fill_between(xs, lo, hi, color=COL[w], alpha=.15)
+            for L, y, n in zip(px, py, pn):
+                # hollow, dashed, and labelled with n. No band -- the median of a tight
+                # pair is informative, its min/max is not a spread estimate.
+                if xs:
+                    ax[i].plot([xs[-1], L], [ys[-1], y], ls=":", color=COL[w], lw=1.6)
+                ax[i].plot([L], [y], "o", mfc="none", mec=COL[w], mew=2, ms=9,
+                           label=None if xs else f"width {w}")
+                ax[i].annotate(f"n={n}", (L, y), textcoords="offset points",
+                               xytext=(7, -11), fontsize=8, color=COL[w])
         ax[i].axhline(b, color="k", ls=":", lw=1.2)
         ax[i].text(2.02, b, " default (L2, w64)", va="bottom", fontsize=8.5)
         ax[i].set_yscale("log"); ax[i].set_xticks(DEPTHS)
@@ -97,8 +115,18 @@ def main():
     for off, d, c, lab in ((-w_, "famN_W40_cap", "tab:red", "famN (limiter, fixed)"),
                            (0.0, "famO_W40_cap", "tab:purple", "famO (limiter + gains)"),
                            (w_, "famR_W40_cap", "tab:blue", "famR (unlimited)")):
-        ax[3].bar(x + off, [1 / store[d][k] if k in store[d] else 0 for k in keys], w_ * .92,
-                  color=c, label=lab, edgecolor="k", lw=.5)
+        vals = [1 / store[d][k][0] if k in store[d] else 0 for k in keys]
+        ns = [store[d][k][1] if k in store[d] else 0 for k in keys]
+        # hatched = fewer seeds than min_seeds. The height is a median and stands; the
+        # hatch says do not quote it as settled.
+        ax[3].bar(x + off, vals, w_ * .92, color=c, label=lab, edgecolor="k", lw=.5,
+                  hatch=None)
+        for xi, v, n in zip(x + off, vals, ns):
+            if 0 < n < a.min_seeds:
+                ax[3].bar([xi], [v], w_ * .92, color="none", edgecolor="k", lw=.5,
+                          hatch="///")
+                ax[3].annotate(f"n={n}", (xi, v), textcoords="offset points",
+                               xytext=(0, 3), ha="center", fontsize=7)
     ax[3].axhline(1, color="k", lw=1)
     ax[3].set_xticks(x); ax[3].set_xticklabels([f"L{L}\nw{w}" for L, w in keys], fontsize=8.5)
     ax[3].set_ylabel("improvement over that family's own default  ($\\times$)")
@@ -112,10 +140,16 @@ def main():
     out = _graphs(a.out); fig.savefig(out, dpi=140)
     print(f"-> {out}")
 
-    print(f"\n{'cell':10s} {'famN':>9s} {'famO':>9s} {'famR':>9s}   (x that family's own default)")
+    print(f"\n{'cell':10s} {'famN':>11s} {'famO':>11s} {'famR':>11s}   "
+          f"(x that family's own default; ! = fewer than {a.min_seeds} seeds)")
     for k in keys:
-        row = "".join(f"{store[d][k]:8.2f}x" if k in store[d] else f"{'--':>9s}"
-                      for d in ("famN_W40_cap", "famO_W40_cap", "famR_W40_cap"))
+        row = ""
+        for d in ("famN_W40_cap", "famO_W40_cap", "famR_W40_cap"):
+            if k not in store[d]:
+                row += f"{'--':>11s}"
+            else:
+                r_, n_ = store[d][k]
+                row += f"{r_:9.2f}x{'!' if n_ < a.min_seeds else ' '}"
         print(f"L{k[0]}_w{k[1]:<6d} {row}")
 
 

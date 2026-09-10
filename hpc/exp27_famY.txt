@@ -1,0 +1,44 @@
+# exp27 -- famY, the last corner of the (limiter x noise x gains) factorial. 4 jobs.
+#
+# GENERATE FIRST:  bsub < hpc/job_gen_famY.sh
+#     sh hpc/submit.sh hpc/exp27_famY.txt famY hpc/job_sweep_wide.sh
+#
+# famY = limiter + FIXED gains + NO white noise, --lhs_seed 21, n_runs 5000.
+#
+#                      seed 21, FIXED gains        seed 22, TUNABLE gains
+#                      limiter    no limiter       limiter    no limiter
+#     noise            famN       famR             famO       famX
+#     no noise         famY <-    famV             famU       famW
+#
+# WHAT IT SETTLES. exp24 measured the effect of removing the white noise in three
+# configurations and the SIGN changed between them:
+#
+#     no limiter, FIXED   gains  (famV/famR)   1.59x BETTER
+#     limiter,    tunable gains  (famU/famO)   1.02x  -- nothing
+#     no limiter, tunable gains  (famW/famX)   1.60x WORSE
+#
+# Two factors move across those three cells, so "it is the gains, not the limiter" is an
+# inference from three points, not a measurement. famY is the fourth corner. With it,
+# the limiter effect can be read at fixed gains (famY/famN vs famV/famR) and at tunable
+# gains (famU/famO vs famW/famX) independently, and the gains effect likewise.
+#
+# ARCHITECTURE IS THE DEFAULT L2_w64, matching famN/famR/famU/famV/famW/famX. F66 says
+# it is not the best available; changing it here would make every other corner
+# incomparable.
+#
+# 24 h ON `hpc` IS ENOUGH. famN at L2_w64 ran well inside it, and the noise-free arms
+# early-stop at similar or lower epoch counts (famU 330-464, famW 265-582). Only the
+# w128 cells need milan.
+#
+# PRE-REGISTERED, and the last two pre-registrations here were wrong so this is written
+# before looking: famY/famN comes back close to famV/famR's 1.59x BETTER, i.e. the
+# fixed-gain result reproduces with the limiter present, and the limiter is confirmed as
+# not the discriminating factor. If instead famY/famN is flat or negative, the limiter
+# DOES matter and the exp24 reading is wrong.
+# WATCH THE EPOCH CAP: famV hit 1200 exactly on seed 3. famY is the same fixed-gain
+# noise-free corner plus the limiter, so it is a candidate to cap too.
+
+--dataset famY_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 0 --results_dir sweeps_famY_W40
+--dataset famY_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --results_dir sweeps_famY_W40
+--dataset famY_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --results_dir sweeps_famY_W40
+--dataset famY_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --results_dir sweeps_famY_W40

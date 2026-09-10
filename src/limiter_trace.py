@@ -47,6 +47,14 @@ def solve(limit, n_runs=12, seed=0):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--out", default="25_limiter_trace.png")
+    p.add_argument("--arch", default="",
+                   help="checkpoint architecture suffix, e.g. _L3_w128. Default '' is the "
+                        "L2_w64 baseline, which is NOT what the project would ship: F66 "
+                        "put L3_w128 3.95x ahead of it. A compliance claim has to be "
+                        "measured on the model that ships, so pass the suffix once the "
+                        "deliverable is chosen. NOTE this still traces famN/famR (FIXED "
+                        "gains) -- tracing famO/famX would need gains threaded through "
+                        "`solve` and `rollout`, which is not done here.")
     a = p.parse_args()
 
     lim = solve(LIMIT)
@@ -59,8 +67,17 @@ def main():
     r = int(sat_w.sum(1).argmax())
     print(f"run {r}: {int(sat_w[r].sum())} of {W} windows saturate")
 
-    ck_lim = sorted(q for q in glob.glob("runs/famN_W40_*sp0.pth") if "_L" not in q)[0]
-    ck_unl = sorted(q for q in glob.glob("runs/famR_W40_*sp0.pth") if "_L" not in q)[0]
+    def pick(fam):
+        pat = f"runs/{fam}_W40_*sp0{a.arch}.pth"
+        q = sorted(glob.glob(pat))
+        if not a.arch:                      # bare baseline: exclude the capacity variants
+            q = [x for x in q if "_L" not in x]
+        if not q:
+            raise SystemExit(f"no checkpoint matching {pat}")
+        return q[0]
+
+    ck_lim, ck_unl = pick("famN"), pick("famR")
+    print(f"architecture: {a.arch or 'L2_w64 (baseline)'}\n  {ck_lim}\n  {ck_unl}")
 
     import matplotlib.pyplot as plt
     t = np.arange(N) * DT
@@ -98,8 +115,19 @@ def main():
             ax[0, c].axhline(-L, color="tab:red", ls=":", lw=1.4)
             ax[0, c].text(0.30, L * 1.05, "clamp $\\pm 2\\pi\\cdot 3$ = 18.85 rad/s",
                           color="tab:red", fontsize=8)
+            # The TRUTH's own overshoot under the SAME estimator is the floor this number
+            # has to be read against. The solver clamps `u` exactly, so any excursion in
+            # `np.gradient(theta)` is differentiation noise, not a physics violation --
+            # and the surrogate is measured with the same finite difference. Reporting
+            # the surrogate's percentage alone (as this figure used to) makes the
+            # estimator's own error look like a compliance failure.
             over = 100 * np.mean(np.abs(f_pred) > L * 1.02)
-            ax[0, c].text(.985, .06, f"surrogate outside the band: {over:.1f}% of samples",
+            over_t = 100 * np.mean(np.abs(f_true) > L * 1.02)
+            print(f"  outside +/-{L:.4f} rad/s by np.gradient:  "
+                  f"surrogate {over:.2f}%   TRUTH (estimator floor) {over_t:.2f}%")
+            ax[0, c].text(.985, .06,
+                          f"outside the band: surrogate {over:.1f}%  |  "
+                          f"truth, same estimator {over_t:.1f}%",
                           transform=ax[0, c].transAxes, ha="right", fontsize=8.5,
                           bbox=dict(fc="#ffe9c7", ec="none", pad=3))
         ax[0, c].set_title(name, fontsize=11)

@@ -1,0 +1,31 @@
+# exp25 -- the three L4_w128 cells still missing from the capacity grid. 3 jobs.
+#
+#     sh hpc/submit.sh hpc/exp25_frontier_missing.txt front16 hpc/job_sweep_long16.sh
+#
+# These are NOT new configurations. They are the exact lines from exp17/exp20 whose jobs
+# were killed by the wall clock, reproduced verbatim so the records land in the same
+# cells with the same tags:
+#
+#     famN_W40_cap  L4_w128  seed 2      (have seeds 0, 1, 3)
+#     famO_W40_cap  L4_w128  seeds 1, 3  (have seeds 0, 2)
+#
+# famR_W40_cap L4_w128 and famO_W40_cap L3_w128 are already at 4/4 and are NOT here.
+# `pending.py` claimed 24 famO capacity jobs were missing; that was its own bug -- it
+# emitted `_g` before `_L`/`_w` while train_pll.py emits it after, so every gains-AND-
+# capacity cell looked absent. Fixed 2026-09-10. Trust the record count, not that output,
+# until the fix has been exercised once.
+#
+# 16 CORES, NOT MORE HOURS. milan caps at 48 h and job_sweep_long.sh already asks 47:00.
+# The L4_w128 cells that finished took 38.6-43.7 h, so the cap had 7% of headroom and the
+# tail of the epoch distribution runs straight through it. See job_sweep_long16.sh.
+#
+# WHY THESE THREE ARE WORTH RERUNNING AT ALL, given the grid is otherwise complete:
+# `capacity_grid.py --min_seeds 4` DROPS a cell with fewer than 4 seeds rather than
+# plotting a short bar, because a min/max range over 2 draws is narrower than over 4 by
+# construction -- the artefact that made the hidden-dim figure mislead. L4_w128 is the
+# frontier cell, the most interesting one in the figure, and it is currently dropped from
+# two of the three panels. Three jobs buys back the corner of the grid.
+
+--dataset famN_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 2 --n_layers 4 --width 128 --results_dir sweeps_famN_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 1 --n_layers 4 --width 128 --results_dir sweeps_famO_W40_cap
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --seed 3 --n_layers 4 --width 128 --results_dir sweeps_famO_W40_cap
