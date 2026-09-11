@@ -19,6 +19,14 @@ citation, so this script measures it.
 Isolates omega_0 on purpose: nominal grid frequency, no amplitude offset, and the PLL
 starts phase-ALIGNED (theta_pll0 = theta_grid0), so the only error is in frequency.
 """
+
+# src/ on the path: these scripts live in src/analysis/ but import the pipeline
+# modules (paths, PLL_Simulator, train_pll, sweep) that stay in src/. Running
+# `python src/analysis/foo.py` puts src/analysis on sys.path, not src/.
+# Same pattern as hpc/generate_family.py.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 import numpy as np
 import torch
 

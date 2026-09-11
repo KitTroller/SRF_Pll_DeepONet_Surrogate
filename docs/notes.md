@@ -1334,7 +1334,7 @@ runs from the same 5000 at zero extra cost — try that before generating anythi
 
 ## Stage G — FINAL head to head, both envelopes, famD model. `graphs/13`.
 
-32 runs x 0.5 s, theta RMS against a 12.5 us reference, `src/envelope_figure.py`.
+32 runs x 0.5 s, theta RMS against a 12.5 us reference, `src/analysis/envelope_figure.py`.
 Model: famD seed 0 (trained WITH faults), lean `predict_window`.
 
 | | NEAR-LOCK RMS | FULL RMS | cost [ms/sim-s] |
@@ -1688,42 +1688,51 @@ famN/famR (capacity, no gains) and famW/famX (gains, no capacity), wrong for fam
 one family that is both. It claimed 24 finished jobs were missing and came one resubmit
 short of redoing them on milan.
 
-### F69 — **THE NOISE RESULT DEPENDS ON THE GAINS, AND F68'S READING WAS INCOMPLETE.** `graphs/27`, `exp24`. 8/8 seeds, 2026-09-10.
+### F69 — **THE NOISE RESULT IS DECIDED BY THE GAINS, NOT THE LIMITER.** `graphs/27`, `exp24` + `exp27`. 16/16 seeds, 2026-09-11.
 
 F68 measured the cost of removing the white noise in two configurations that differed by
-TWO factors at once -- limiter+tunable versus unlimited+fixed -- and got 1.02x and 1.59x.
-famW/famX close that gap: unlimited, TUNABLE gains, `--lhs_seed 22`, so the only change
-from famU/famO is the limiter.
+TWO factors at once -- limiter+tunable versus unlimited+fixed -- and got 1.02x and 1.59x,
+which cannot be attributed. famW/famX (`exp24`) and famY (`exp27`) complete the
+(limiter x gains) factorial. Every family is bit-paired with its twin through a shared
+`--lhs_seed`, so within each row the noise term is the only difference.
 
-Like-for-like, noise-free model against noise-trained model, both on the same clean truth:
+Like-for-like, noise-free model against noise-trained model, both on the same clean truth.
+**>1 means removing the noise helped:**
 
-| configuration | free model | noisy model | effect of removing the noise |
+| configuration | free model | noisy model | effect |
 |---|---|---|---|
-| no limiter, **fixed** gains (famV/famR) | 9.797e-5 | 1.562e-4 | **1.59x BETTER** |
-| limiter, **tunable** gains (famU/famO) | 1.118e-3 | 1.138e-3 | 1.02x -- nothing |
-| no limiter, **tunable** gains (famW/famX) | 5.774e-4 | 3.609e-4 | **1.60x WORSE** |
+| limiter, **FIXED** gains (famY/famN) | 2.573e-4 | 3.908e-4 | **1.52x BETTER** |
+| no limiter, **FIXED** gains (famV/famR) | 9.797e-5 | 1.562e-4 | **1.59x BETTER** |
+| limiter, **TUNABLE** gains (famU/famO) | 1.118e-3 | 1.138e-3 | 1.02x -- nothing |
+| no limiter, **TUNABLE** gains (famW/famX) | 5.774e-4 | 3.609e-4 | **1.60x WORSE** |
 
-**The sign flips with the GAINS, not the limiter.** Panels 1 and 2 of `graphs/27` differ
-only by the limiter and the answer barely moves; panels 2 and 3 differ only by the gains
-and the sign inverts. Removing the noise from a gains-conditioned model makes it worse on
-the very truth it was trained for.
+**Down the fixed-gain rows: 1.52x and 1.59x, near-identical whether the limiter is on or
+off. Down the tunable rows: 1.02x and 0.63x.** The limiter barely touches the noise
+question; the gains decide it. Removing the noise from a gains-conditioned model makes it
+worse on the very truth it was trained for. No mechanism is established for why the extra
+two input dimensions invert the sign -- the overfit-gap story below is consistent with it
+but does not explain the inversion, and nothing here tests it.
 
-**THE PRE-REGISTRATION FAILED AGAIN, AND IN A NEW WAY.** `exp24`'s header predicted
-famW/famX would reproduce the ~1.6x improvement and pin the blame on the limiter. It
-reproduced the magnitude and inverted the sign. The one prediction that has now held three
-times is the extrapolation cost: famW on noisy truth is 34.15x worse, alongside F68's 14x
-and 39x. Worst case tracks it rather than exceeding it (famV on noisy truth: 38.78x on
-RMS, 18x on peak), so there is no hidden tail.
+**THE PREDICTIONS, HONESTLY SCORED.** `exp24`'s header predicted famW/famX would
+reproduce the ~1.6x improvement and blame the limiter; it reproduced the magnitude and
+INVERTED the sign -- wrong, and wrong in a way I had not allowed for. `exp27`'s header
+then predicted famY/famN would land near famV/famR's 1.59x; it came back 1.52x -- right.
 
-**THIS IS THREE OF FOUR CORNERS, NOT A MEASUREMENT.** Two factors still move across those
-rows. `famY` -- limiter + FIXED gains + no noise at `--lhs_seed 21` -- is the fourth, and
-completes a 2x2 at each gains setting (seed 21: famN/famR/famV/famY; seed 22:
-famO/famU/famX/famW). Submitted as `exp27`. Until it lands, "it is the gains" is an
-inference from three points.
+**The extrapolation cost has now held four times for four**: 15.97x, 13.98x, 38.78x,
+34.15x on noisy truth. It also has structure I did not predict -- 14-16x with the limiter
+against 34-39x without -- because a limited family's error budget is already dominated by
+the clamp's kink, so a shift in the sensor noise is proportionally smaller. Worst case
+tracks RMS rather than exceeding it (famV on noisy truth: 38.78x RMS, 18x peak), so there
+is no hidden tail.
 
-Everything F68 concluded about KEEPING the noise survives and is strengthened: for the
-deliverable, which has tunable gains, removing it is somewhere between worthless and
-actively harmful before the 14-39x extrapolation penalty is counted.
+**MECHANISM, FOUR REPLICATIONS.** Every noise-free family shows the same three things:
+the physics residual collapses (famY 6.3e-4 vs famN 7.1e-3, 11x), the val/train gap
+widens (famY 4.1 vs famN 2.0), and deployed error does not follow the residual. The noise
+was a regulariser, not a floor.
+
+Everything F68 concluded about KEEPING the noise survives and is strengthened: the
+deliverable has tunable gains, so it sits in the 1.02x cell -- removing the noise buys
+nothing there before the 14x extrapolation risk is even counted.
 
 ### F68 — **THE WHITE MEASUREMENT NOISE STAYS.** `graphs/27`, `exp23`. 8/8 seeds, 2026-09-09.
 
@@ -1977,7 +1986,7 @@ part of the 2.12x on famN and does nothing on famR, that is a clean mechanistic 
 | SATURATED windows | 22.20x | **21.87x** |
 
 The two load-bearing numbers agree to **0.5%** and **1.5%** on independent draws. F65 is
-confirmed and quotable. `graphs/24` plots both draws side by side -- `src/limiter_report.py` defaults to
+confirmed and quotable. `graphs/24` plots both draws side by side -- `src/analysis/limiter_report.py` defaults to
 exactly that. They are NEVER pooled: pooling would hide the replication, which is the
 result. The middle row moved most (16%), which is expected -- it depends on
 WHICH runs happen to saturate, and that is the quantity a re-draw changes.
@@ -2145,7 +2154,7 @@ the clamp makes the target piecewise and depth is what represents kinks. `w32` a
 params is the control for "is it just parameter count".
 
 ### F62 — **exp16: NEITHER REMOVING FAULTS NOR NARROWING THE GAIN BOX HELPS.**
-`graphs/22`, `src/exp16_report.py`. Both pre-registered predictions FAILED.
+`graphs/22`, `src/analysis/exp16_report.py`. Both pre-registered predictions FAILED.
 
 The sweep records say famL_W40 is 1.42x better than famJ_W40 and famM_W40 another 1.36x
 better than that. **Both gaps are validation-split artefacts** -- famL/famM validate on
@@ -2219,7 +2228,7 @@ its own trajectories and needs no dataset, so any two checkpoints can be compare
 
 ### F60 — **THE DELIVERABLE FOR RAHUL.** `graphs/rahul/`, and it changes the F57 advice.
 
-**Gain sensitivity** (`src/gain_sensitivity.py`, `graphs/rahul/03`). Same synthetic test in
+**Gain sensitivity** (`src/analysis/gain_sensitivity.py`, `graphs/rahul/03`). Same synthetic test in
 every cell — identical ICs, `omega0` in +/-2 (his regime) — sweeping the (Kp, Ki) box and
 feeding the gains model those gains as inputs:
 
@@ -2582,7 +2591,7 @@ Resource use is healthy either way — 4.1 of 4 cores, 3.4 GB of the 5 GB limit.
 
 ### F51 — **`max_freq` RESOLVED.** It was never the top frequency: it is `max_freq / F`.
 
-`src/dft_spectrum.py`, `graphs/20`. The DFT finally answered F19/F20, and the answer is
+`src/analysis/dft_spectrum.py`, `graphs/20`. The DFT finally answered F19/F20, and the answer is
 that the whole sweep was parameterised on the wrong quantity.
 
 **Where the power actually is.** Full-run spectrum of the deviation `theta - (theta0 +
@@ -2705,7 +2714,7 @@ thing that would actually explain the number.
 
 ### F49 — **F48's dt GAIN IS A NOISE-MODEL ARTEFACT. Retracted 2026-08-20.**
 
-`src/dt_convergence.py`, `graphs/19`. Solver only, no network. Three arms against one
+`src/analysis/dt_convergence.py`, `graphs/19`. Solver only, no network. Three arms against one
 fixed noiseless waveform subsampled onto each grid, noise added afterwards:
 
 | dt [us] | sensors/0.5 s | **noise OFF** | gain | **sigma CONST** (as coded) | gain | **PSD CONST** (physical) | gain |
@@ -2897,7 +2906,7 @@ hole that is *currently uncontrolled* rather than merely unexplored:
     submitting:** feeding the true theta through `vq_from_prediction` reproduces the
     stored `Vq` to 6.4e-7 relative. Watch for the spurious minimum — a self-consistent
     *wrong* angle also zeroes the eq-6 residual, which eq-4 structurally cannot do.
-0d. **OOD ladder** (`src/ood_test.py`) — **queued on the laptop, chained to run when the
+0d. **OOD ladder** (`src/analysis/ood_test.py`) — **queued on the laptop, chained to run when the
     famD seed loop exits** (`logs/ood_test.log`, both famD checkpoints, 32 runs each).
     Evaluation only, no training. Closes "everything so far is interpolation".
 
@@ -2981,7 +2990,7 @@ that, `load_checkpoint` built an MLP — drawing from the global RNG — so **ad
 checkpoint to the command line silently changed the noise in every row** (jump BIG moved
 9.8 -> 10.3 that way). Paired ICs alone were not enough; the forcing has to be paired too.
 
-### F43 — the SRF-PLL's OWN acquisition limit. `src/lockin_range.py`, `graphs/16`.
+### F43 — the SRF-PLL's OWN acquisition limit. `src/analysis/lockin_range.py`, `graphs/16`.
 
 Asked because of F42: before blaming the network at `omega_0 = 80`, what does the
 *reference solver* do there? Pure frequency error, nominal grid, PLL starting
@@ -3678,8 +3687,39 @@ exp25  the 3 lost L4_w128 cells           RUNNING  milan, 16 cores. 47 h was 7% 
                                                    worst survivor; the fix was cores.
 exp26  width 256 at depth 2 and 3         NOT SENT  asked directly, the supervisor said
                                                     no. Kept in hpc/ if that changes.
-exp27  famY, the 4th factorial corner     QUEUED   closes F69's attribution gap
+exp27  famY, the 4th factorial corner     DONE   F69. 4/4, none capped. Its prediction
+                                                 HELD (1.52x vs 1.59x predicted); the
+                                                 factorial is closed and it is the gains.
 ```
+
+### Figures 01-06 were describing the wrong model, and two findings in them are stale
+
+Until 2026-09-11 `pll_plots.py` had NO CLI: it was hardcoded to `pll_dataset.npz` (n=1000,
+**faults OFF**) and `pll_deeponet.pth`, the original prototype. Every regeneration since the
+project moved to n=5000, faults, gains and the limiter has silently redrawn that prototype.
+It now takes `--dataset` / `--ckpt`, and 01-06 as committed are **famO_W40 + L3_w128_g** --
+the deliverable. Three bugs had to be fixed to make a gains model possible at all: the three
+`predict_window` call sites passed no Kp/Ki (which that function refuses rather than
+defaults), `fig_error_by_window` built its branch without the gain columns (378 wide against
+a 380-wide layer), and `fig_residual_budget` used `meta["Kp"]`/`meta["Ki"]`, which on a gains
+family are only the config defaults and describe a controller no run used.
+
+**Two things the redraw invalidates.** `fig_error_by_window`'s docstring says "~2/3 of the
+error is in window 0". On famO that is false: window 0 holds **7.8%** and the peak is
+**17.8% at window 7**. The error no longer concentrates at acquisition -- it tracks wherever
+the limiter fires and the faults land. The old statement was measured on the unlimited
+n=1000 prototype and should not be quoted for the deliverable.
+
+**OPEN OBSERVATION, not yet a finding -- omega error is DISCONTINUOUS at the handover.**
+In the redrawn `graphs/03`, theta error is smooth across window boundaries while omega error
+moves in visible steps, one per handover. The mechanism is structural: each window's theta
+prediction is anchored to the handed-over `theta0`, so theta is continuous by construction,
+while omega is a free network output per window with nothing tying window k+1's first sample
+to window k's last. Nobody has measured whether those steps are what drives `compounding`
+(3.5-4x). That is exactly the free experiment named in `docs/ARCHITECTURE_GUIDE.html` §D --
+substitute the TRUE omega at each handover, then the true theta, and see which collapses it.
+It also suggests a third candidate change nobody has costed: a continuity penalty at the
+seam. Do the measurement before believing any of this.
 
 **Deliverable as of 2026-09-10: `famO_W40_..._L3_w128_g`** (F70) -- 3.95x better than the
 default, 98x the solver at batch 1, 4 seeds, 0.00% outside the limiter band (F71). A W=20

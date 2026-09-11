@@ -10,6 +10,14 @@ The top row is the thing being clamped, `u = omega + Kp*Vq`, against the +/-L ba
 is what makes "saturation" visible at all: everywhere else in the project it is invisible,
 because only ~4% of windows touch it and theta itself looks perfectly ordinary.
 """
+
+# src/ on the path: these scripts live in src/analysis/ but import the pipeline
+# modules (paths, PLL_Simulator, train_pll, sweep) that stay in src/. Running
+# `python src/analysis/foo.py` puts src/analysis on sys.path, not src/.
+# Same pattern as hpc/generate_family.py.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 import argparse
 import glob
 

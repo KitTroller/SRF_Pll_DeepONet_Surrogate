@@ -26,9 +26,11 @@ condition, so a 0.5 s trajectory is 40 handovers with no ground truth anywhere i
 > unlimited problem, so the deployed model has headroom nobody had looked for. On the
 > LIMITED families, two extra layers are worth **2.2-2.4×** — confirmed independently on
 > famN (fixed gains) and famO (tunable gains), against **1.1×** on the unlimited control.
-> **F68/F69** close the white-noise question: the noise stays. Removing it helps only
-> with FIXED gains (1.59×); with the deliverable's TUNABLE gains it does nothing (1.02×)
-> or actively hurts (1.60× worse), and it always costs **14-39×** if any noise is present.
+> **F68/F69** close the white-noise question over the complete (limiter × gains)
+> factorial: the noise stays. Removing it helps only with FIXED gains (1.52× / 1.59×,
+> limiter on / off); with the deliverable's TUNABLE gains it does nothing (1.02×) or
+> actively hurts (1.60× worse) — **the gains decide the sign, the limiter barely matters**
+> — and it always costs **14-39×** if any noise is present.
 > Its 6-30× improvement in the *physics residual* never reaches deployed error — the
 > noise was a regulariser, not a floor (`graphs/27`).
 > **F70** refines F66: the whole depth effect is the **third** layer (2.0-2.2×); the
@@ -149,7 +151,7 @@ A setting is only justified if the alternatives were measured. These were.
 
 | **removing faults from training** | nothing on clean input (medians within 1.02x at W=40 on a common test set) | and it **costs 5-9x on voltage sags**, because a sag moves `Va,Vb,Vc` into amplitudes the model never saw. Phase jumps are unaffected (~1.25x for everyone) — a jump re-phases a still-clean sinusoid. Strictly worse | **F62** · `graphs/22` |
 | **narrowing the `Kp`/`Ki` box** | nothing (famM ties famL everywhere on a common test) | the apparent 1.36x gain was an easier validation split. The gains-as-inputs cost is about having two extra input dimensions at all, not about how wide they are | **F62** · `graphs/22` |
-| **removing the white measurement noise** | **1.02x** with the limiter and tunable gains, and **1.60x WORSE** with tunable gains and no limiter. It helps only with FIXED gains (1.59x) | and it costs **14-39x** if any noise is present. The physics residual really does drop 6-30x — but that never reaches deployed error, because the noise was acting as a *regulariser*, not as a floor: the val/train gap goes 1.5 → 13.3 without it | **F68, F69** · `graphs/27` |
+| **removing the white measurement noise** | **1.02x** with the limiter and tunable gains, **1.60x WORSE** with tunable gains and no limiter. It helps only with FIXED gains (**1.52x / 1.59x**, limiter on / off) | and it costs **14-39x** if any noise is present. Measured over the complete (limiter × gains) factorial: the **gains** decide the sign, the limiter barely matters. The physics residual really does drop 6-30x — but that never reaches deployed error, because the noise was acting as a *regulariser*, not as a floor: the val/train gap doubles to quadruples without it | **F68, F69** · `graphs/27` |
 | **a 4th interior layer** (L3 → L4) | 7-12% on RMS, inside the 1.6x seed spread | and it makes **peak error 1.5x worse** at w64 in both limited families, at 23% more compute. All of "depth is worth 2.0-2.4x" is the **third** layer | **F70** · `graphs/26, 26b` |
 
 ### If you want something different — the levers, in order of usefulness
@@ -392,7 +394,7 @@ flowchart TD
 | `speed_benchmark.py` | Cost and accuracy against the paper's code: their whole control block, their NN alone, their NN driven by our voltage, our solver at several steps, and us — all against one fine-grid reference. Mostly used as a **library** — `envelope_figure.py` and `ood_test.py` import `head_to_head`, `solve_at` and `deeponet_at` from it. |
 | `envelope_figure.py` | `graphs/12` — the head-to-head. Two panels from one run: error against time, and accuracy against cost. Restricted to the range their released network was trained on. **Supersedes the retired figure 09**, whose right panel it duplicated and whose left panel it now draws with one more method. |
 | `common_test.py` | **The** definition of a cross-family comparison: fresh trajectories at named gains, the recurrent rollout, and `load_f32`. Four scripts had grown their own copy; a per-family `val_th` is not comparable across families (F59/F61), so this must stay single-sourced. |
-| `pll_plots.py` | All report figures 01-06 in one run. |
+| `pll_plots.py` | All report figures 01-06 in one run. **Takes `--dataset` / `--ckpt`** — the defaults are the n=1000 no-fault *prototype* and a pre-limiter checkpoint, kept only so an old command still runs. Always pass the real pair; 01-06 as committed describe **famO_W40 + L3_w128_g**. |
 
 ### Everything else
 
@@ -495,7 +497,7 @@ python src/sweep.py --collect --results_dir sweeps_famX_ff --plot ff
 ```
 
 ```bash
-python src/plot_sweeps.py sweeps_famX_ff --kind arms
+python src/analysis/plot_sweeps.py sweeps_famX_ff --kind arms
 ```
 
 ### 4. Every figure, and the command that draws it
@@ -506,28 +508,28 @@ intermediate, so a stale figure is always one command away from being correct. R
 
 | # | figure | command |
 |---|---|---|
-| 01-06 | initial conditions, lock check, prediction vs truth, window sweep, error by window, residual budget | `python src/pll_plots.py` |
-| 10 | Fourier arms of a sweep directory (`F=0` / `mf503` / `mf628`, every seed a dot) | `python src/plot_sweeps.py sweeps_famB_ff --kind arms` |
-| 11 | the `W` sweep | `python src/plot_sweeps.py sweeps_famB_W --kind W` |
-| 14 | the `w_phys` sweep | `python src/plot_sweeps.py sweeps_famB_wphys --kind wphys` |
-| 17 | hidden-dim sweep | `python src/plot_sweeps.py sweeps_famB_hd --kind hd` |
-| 21 | eq-4 vs eq-6 | `python src/plot_sweeps.py sweeps_famB_eq4vs6 --kind residual` |
-| 12 | **head-to-head**: us vs the paper's NN vs the solver — error in time and accuracy vs cost, inside their trained range | `python src/envelope_figure.py runs/<tag>.pth --n_runs 32` |
-| 15 | OOD ladder — one axis at a time past the training box | `python src/ood_test.py runs/<a>.pth runs/<b>.pth --n_runs 32` |
-| 16 | the loop's own acquisition limit (no network involved) | `python src/lockin_range.py` |
-| 19 | does a finer timestep buy anything? (solver only) | `python src/dt_convergence.py` |
-| 20 | per-window and full-run spectra — where the residual energy sits | `python src/dft_spectrum.py` |
-| 22 | exp16: faults on/off and the gain box, on a common test set | `python src/exp16_report.py` |
-| 23 | **speed vs accuracy** for the four deliverable models — both trades on one axis | `python src/speed_accuracy.py` |
-| 24 | what the frequency limiter costs, split by whether the window saturated (**branch `Siemens_Request`**) | `python src/limiter_report.py` |
-| 25 | one run solved with and without the limiter, with the clamp visible (**branch `Siemens_Request`**) | `python src/limiter_trace.py` |
-| 25b | the same trace on the **deliverable** architecture, with the estimator's own floor printed | `python src/limiter_trace.py --arch _L3_w128 --out 25b_limiter_trace_L3w128.png` |
-| 26 | depth × interior width, on a limited and an unlimited family (**branch `Siemens_Request`**) | `python src/capacity_grid.py` |
-| 26b | the same grid scored on **worst case** rather than RMS — depth's gain largely vanishes, width's does not | `python src/capacity_grid.py --metric rollout_full_max --out 26b_capacity_worstcase.png` |
-| 27 | white noise on/off × limiter × gains, every model scored on **both** truths (**branch `Siemens_Request`**) | `python src/noise_report.py` |
-| Tunable_Kp_Ki_tests/01-02 | model menu; theta and omega split | `python src/model_menu.py` |
-| Tunable_Kp_Ki_tests/03 | error across the whole `(Kp, Ki)` box, gains vs fixed | `python src/gain_sensitivity.py runs/<gains tag>.pth` |
-| Tunable_Kp_Ki_tests/04-06 | prediction vs truth per model (W=40, W=20), plus the gain showcase | `python src/contenders.py` |
+| 01-06 | initial conditions, lock check, prediction vs truth, window sweep, error by window, residual budget | `python src/analysis/pll_plots.py --dataset famO_W40.npz --ckpt runs/famO_W40_n5000_W40_F4_mf503_wp0.3_s0sp0_L3_w128_g.pth` |
+| 10 | Fourier arms of a sweep directory (`F=0` / `mf503` / `mf628`, every seed a dot) | `python src/analysis/plot_sweeps.py sweeps_famB_ff --kind arms` |
+| 11 | the `W` sweep | `python src/analysis/plot_sweeps.py sweeps_famB_W --kind W` |
+| 14 | the `w_phys` sweep | `python src/analysis/plot_sweeps.py sweeps_famB_wphys --kind wphys` |
+| 17 | hidden-dim sweep | `python src/analysis/plot_sweeps.py sweeps_famB_hd --kind hd` |
+| 21 | eq-4 vs eq-6 | `python src/analysis/plot_sweeps.py sweeps_famB_eq4vs6 --kind residual` |
+| 12 | **head-to-head**: us vs the paper's NN vs the solver — error in time and accuracy vs cost, inside their trained range | `python src/analysis/envelope_figure.py runs/<tag>.pth --n_runs 32` |
+| 15 | OOD ladder — one axis at a time past the training box | `python src/analysis/ood_test.py runs/<a>.pth runs/<b>.pth --n_runs 32` |
+| 16 | the loop's own acquisition limit (no network involved) | `python src/analysis/lockin_range.py` |
+| 19 | does a finer timestep buy anything? (solver only) | `python src/analysis/dt_convergence.py` |
+| 20 | per-window and full-run spectra — where the residual energy sits | `python src/analysis/dft_spectrum.py` |
+| 22 | exp16: faults on/off and the gain box, on a common test set | `python src/analysis/exp16_report.py` |
+| 23 | **speed vs accuracy** for the four deliverable models — both trades on one axis | `python src/analysis/speed_accuracy.py` |
+| 24 | what the frequency limiter costs, split by whether the window saturated (**branch `Siemens_Request`**) | `python src/analysis/limiter_report.py` |
+| 25 | one run solved with and without the limiter, with the clamp visible (**branch `Siemens_Request`**) | `python src/analysis/limiter_trace.py` |
+| 25b | the same trace on the **deliverable** architecture, with the estimator's own floor printed | `python src/analysis/limiter_trace.py --arch _L3_w128 --out 25b_limiter_trace_L3w128.png` |
+| 26 | depth × interior width, on a limited and an unlimited family (**branch `Siemens_Request`**) | `python src/analysis/capacity_grid.py` |
+| 26b | the same grid scored on **worst case** rather than RMS — depth's gain largely vanishes, width's does not | `python src/analysis/capacity_grid.py --metric rollout_full_max --out 26b_capacity_worstcase.png` |
+| 27 | white noise on/off × limiter × gains, every model scored on **both** truths (**branch `Siemens_Request`**) | `python src/analysis/noise_report.py` |
+| Tunable_Kp_Ki_tests/01-02 | model menu; theta and omega split | `python src/analysis/model_menu.py` |
+| Tunable_Kp_Ki_tests/03 | error across the whole `(Kp, Ki)` box, gains vs fixed | `python src/analysis/gain_sensitivity.py runs/<gains tag>.pth` |
+| Tunable_Kp_Ki_tests/04-06 | prediction vs truth per model (W=40, W=20), plus the gain showcase | `python src/analysis/contenders.py` |
 
 Figure **09 is retired** — figure 12 draws its error-vs-time panel with one more method and
 its cost panel was already a subset.
@@ -545,9 +547,9 @@ in F61, and it has cost this project five separate results.
 |---|---|
 | `python src/PLL_Simulator.py` | Simulator sanity check: settled `Vd -> +1`, `Vq -> 0`, and the lock plot |
 | `python src/reval.py sweeps_famX_ff --n_eval 150` | Re-score every checkpoint in a directory. Rewrites the JSONs in place — back the directory up first |
-| `python src/fault_split.py runs/<tag>.pth` | Deployed metrics split into clean / sag / phase jump |
+| `python src/analysis/fault_split.py runs/<tag>.pth` | Deployed metrics split into clean / sag / phase jump |
 | `python src/rewindow.py famX_W10.npz --W 50` | Derive a new windowing without re-solving. Splits and merges; round trip verified bit-exact |
-| `python src/speed_benchmark.py` | Cost tables against the paper's own solver and NN. Also the library behind figures 12 and 15 |
+| `python src/analysis/speed_benchmark.py` | Cost tables against the paper's own solver and NN. Also the library behind figures 12 and 15 |
 | `python hpc/smoke_test.py` | One real optimiser step; checks the environment can train, not just import |
 | `python hpc/bench.py` | Optimiser-step cost on this machine, every W, every thread count |
 

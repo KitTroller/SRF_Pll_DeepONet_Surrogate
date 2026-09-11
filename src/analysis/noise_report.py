@@ -27,6 +27,14 @@ So every model is scored on BOTH truths, on identical freshly generated trajecto
 Both pairs are evaluated at the nominal (Kp, Ki) = (25, 300) so the limited and unlimited
 rows differ ONLY by the limiter, not by the operating point.
 """
+
+# src/ on the path: these scripts live in src/analysis/ but import the pipeline
+# modules (paths, PLL_Simulator, train_pll, sweep) that stay in src/. Running
+# `python src/analysis/foo.py` puts src/analysis on sys.path, not src/.
+# Same pattern as hpc/generate_family.py.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 import argparse
 import glob
 
@@ -41,14 +49,18 @@ KP, KI = 25.0, 300.0            # config nominal; famV/famR are fixed-gain model
 LIMIT = 18.8496                 # 2*pi*3 rad/s
 
 PAIRS = (
+    dict(name="limiter + FIXED gains", free="famY_W40", noisy="famN_W40", limit=LIMIT),
     dict(name="limiter + TUNABLE gains", free="famU_W40", noisy="famO_W40", limit=LIMIT),
+    dict(name="NO limiter + FIXED gains", free="famV_W40", noisy="famR_W40", limit=None),
     dict(name="NO limiter + TUNABLE gains", free="famW_W40", noisy="famX_W40", limit=None),
-    dict(name="no limiter, fixed gains", free="famV_W40", noisy="famR_W40", limit=None),
 )
-# The third pair (exp24) exists because the first two moved TWO factors at once -- pair 1
-# was limiter+tunable and pair 3 unlimited+fixed -- so their disagreement (1.02x vs 1.59x)
-# could not be attributed. famW/famX hold gains ON and drop the limiter, at famO's own
-# --lhs_seed 22, which isolates the limiter. Read pairs 1 and 2 against each other.
+# THE COMPLETE 2x2x2 (limiter x gains x noise), in that order so the panels read as a
+# factorial. exp23 gave corners 2 and 3 and moved two factors at once, so its 1.02x vs
+# 1.59x could not be attributed (F68). exp24 added corner 4, isolating the limiter at
+# tunable gains. exp27's famY is corner 1 and closes it: pairs 1-2 differ only by the
+# gains with the limiter on, 3-4 only by the gains with it off, 1-3 and 2-4 only by the
+# limiter. Every pair shares its partner's --lhs_seed, so all eight families are bit-
+# paired with their twin and differ by the noise term alone.
 
 
 def make_truth(limit, white_noise, n_runs, seed):
@@ -121,10 +133,14 @@ def main():
 
     import matplotlib.pyplot as plt
     from matplotlib.colors import LogNorm
+    # Two rows once there are four pairs: one row of four matrices plus the scatter and
+    # the mechanism panel would be 34 inches wide and unreadable at any sane dpi.
     npair = len(PAIRS)
-    fig, ax = plt.subplots(1, npair + 2, figsize=(5.0 * npair + 14, 5.4),
-                           gridspec_kw=dict(width_ratios=[1] * npair + [2.0, 1.3]))
-    ax_sc, ax_mech = ax[npair], ax[npair + 1]
+    fig = plt.figure(figsize=(5.3 * npair, 10.6))
+    gs = fig.add_gridspec(2, npair, height_ratios=[1, 1.05], hspace=.28)
+    ax = [fig.add_subplot(gs[0, i]) for i in range(npair)]
+    ax_sc = fig.add_subplot(gs[1, :npair - 1])
+    ax_mech = fig.add_subplot(gs[1, npair - 1])
 
     for i, pr in enumerate(PAIRS):
         M = np.array([[np.median(cells[(pr["name"], mn, tn)]) for tn in (False, True)]
@@ -155,7 +171,9 @@ def main():
         ax[i].set_xticklabels(["noise-FREE", "NOISY"], fontsize=10)
         ax[i].set_yticklabels([f"noise-free\n({pr['free'].split('_')[0]})",
                                f"noisy\n({pr['noisy'].split('_')[0]})"], fontsize=10)
-        ax[i].set_xlabel("truth it is scored on"); ax[i].set_ylabel("what it was trained on")
+        ax[i].set_xlabel("truth it is scored on")
+        if i == 0:      # only the leftmost: four copies get squeezed between the panels
+            ax[i].set_ylabel("what it was trained on")
         ax[i].set_title(f"{pr['name']}\n$\\times$ = relative to what we ship (bold)",
                         fontsize=10.5)
 
@@ -218,14 +236,22 @@ def main():
                       "error — and the\noverfit gap (triangles) widens without noise.",
                       fontsize=10)
 
-    fig.suptitle("Removing the white measurement noise helps only with FIXED gains "
-                 "(1.59x).  With TUNABLE gains it does nothing (1.02x) or actively hurts "
-                 "(1.60x worse) — and it always costs 14-39x if any noise is present.\n"
-                 "Every cell is the SAME freshly generated trajectories at (Kp,Ki)="
-                 "(25,300) — never a per-family validation split. Compare panels 1 and 2: "
-                 "same gains, limiter on/off. Compare 2 and 3: same physics, gains on/off.",
-                 fontsize=11.5)
-    fig.tight_layout()
+    # Built from the data, not typed. The headline has had to be corrected twice as pairs
+    # were added; a computed one cannot go stale.
+    def effect(pr):
+        """>1 = removing the noise HELPED, on the clean truth, like for like."""
+        return (np.median(cells[(pr["name"], True, False)])
+                / np.median(cells[(pr["name"], False, False)]))
+    worst = max(np.median(cells[(pr["name"], False, True)])
+                / np.median(cells[(pr["name"], True, True)]) for pr in PAIRS)
+    line = "   ".join(f"{pr['name']}: {effect(pr):.2f}x" for pr in PAIRS)
+    fig.suptitle(
+        "Removing the white measurement noise, across the complete "
+        "(limiter $\\times$ gains) factorial.  >1 = it helped.\n" + line +
+        f"\nAnd on noisy truth it costs up to {worst:.0f}x. Every cell is the SAME freshly "
+        "generated trajectories at (Kp,Ki)=(25,300) — never a per-family validation split.",
+        fontsize=12)
+    fig.tight_layout(rect=(0, 0, 1, .94))
     out = _graphs(a.out); fig.savefig(out, dpi=140)
     print(f"\n-> {out}")
 

@@ -20,6 +20,14 @@ The cumulative-power curve is the one that answers the question: read off the fr
 power below 503 rad/s. If `target_theta` is ~fully contained there and the residual is
 not, the basis is the binding constraint and "why 503" is answered.
 """
+
+# src/ on the path: these scripts live in src/analysis/ but import the pipeline
+# modules (paths, PLL_Simulator, train_pll, sweep) that stay in src/. Running
+# `python src/analysis/foo.py` puts src/analysis on sys.path, not src/.
+# Same pattern as hpc/generate_family.py.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 import argparse
 
 import numpy as np

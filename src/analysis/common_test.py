@@ -23,6 +23,14 @@ are not comparable across families; that is the whole lesson of F59/F61.
 one legible trace rather than averaging a batch -- but uses `rollout` from here so the
 recurrence and the handover are shared.
 """
+
+# src/ on the path: these scripts live in src/analysis/ but import the pipeline
+# modules (paths, PLL_Simulator, train_pll, sweep) that stay in src/. Running
+# `python src/analysis/foo.py` puts src/analysis on sys.path, not src/.
+# Same pattern as hpc/generate_family.py.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 import time
 
 import numpy as np

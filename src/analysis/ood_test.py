@@ -31,6 +31,14 @@ Design notes:
     simply harder to integrate and the network is not the problem.
   * The reference is the same 12.5 us trapezoidal solve used everywhere else (F41).
 """
+
+# src/ on the path: these scripts live in src/analysis/ but import the pipeline
+# modules (paths, PLL_Simulator, train_pll, sweep) that stay in src/. Running
+# `python src/analysis/foo.py` puts src/analysis on sys.path, not src/.
+# Same pattern as hpc/generate_family.py.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 import argparse
 
 import numpy as np

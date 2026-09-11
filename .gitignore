@@ -4,6 +4,8 @@
 # (A bare `docs` cannot be un-ignored per-file: git never descends into it.)
 docs/*
 !docs/notes.md
+#!docs/ARCHITECTURE_GUIDE.html
+#!docs/PIPELINE_WALKTHROUGH.html
 
 __pycache__
 __pycache__/
@@ -18,5 +20,9 @@ runs.txt
 # sweep record -- and was 2 GB of the ~6 GB LFS footprint.
 data/famG_W40.npz
 data/famF_W40.npz
+# Pulled from the cluster on 2026-09-11 so pll_plots.py could redraw 01-06 on the
+# deliverable. 1.0 GB, regenerable from hpc/job_gen_limiter.sh at --lhs_seed 22, and
+# NOT ignored by any pattern above -- a `git add -A` would have committed it.
+data/famO_W40.npz
 #*.npz
 #data/*.npz

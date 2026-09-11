@@ -2,6 +2,14 @@
 pll_plots.py -- every figure for the report. Run: python pll_plots.py
 Writes PNGs into graphs/.
 """
+
+# src/ on the path: these scripts live in src/analysis/ but import the pipeline
+# modules (paths, PLL_Simulator, train_pll, sweep) that stay in src/. Running
+# `python src/analysis/foo.py` puts src/analysis on sys.path, not src/.
+# Same pattern as hpc/generate_family.py.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -18,12 +26,23 @@ DPI = 1024
 wrap = lambda x: (x + np.pi) % (2 * np.pi) - np.pi
 
 
-def load_all(dataset="pll_dataset.npz", ckpt="pll_deeponet.pth"):
+def load_all(dataset="pll_dataset.npz", ckpt="pll_deeponet.pth", split_seed=0):
     data, meta = Dataset_Creator.load_dataset(dataset)
     prep = prepare(data)
     model, ck = load_checkpoint(ckpt)
-    tr, va = group_split(prep["run_id"], 0.15, 0)
+    tr, va = group_split(prep["run_id"], 0.15, split_seed)
     return data, meta, prep, model, ck, tr, va
+
+
+def gains_for(prep, model, row):
+    """(kp, ki) for the run that owns branch row `row`, or (None, None).
+
+    `predict_window` REFUSES a gains model without them rather than defaulting, so this
+    has to be threaded to every call site. Fixed-gain models reject being given them, so
+    the decision is made from the model, not from the dataset."""
+    if not getattr(model, "n_extra", 0):
+        return None, None
+    return float(prep["kp"][row]), float(prep["ki"][row])
 
 
 def stitch(arr, run_idx, W):
@@ -129,11 +148,12 @@ def fig_prediction_vs_truth(prep, meta, model, ck, val_runs, n_show=10):
     for r in runs:
         row0 = r * W
         th0, om0 = prep["theta0_abs"][row0], prep["omega0"][row0]
+        kp, ki = gains_for(prep, model, row0)               # None for a fixed-gain model
         th_p, om_p = [], []
         for k in range(W):                                  # recurrent rollout
             th, om = predict_window(model, ck, th0, om0,
                                     prep["Va"][row0 + k], prep["Vb"][row0 + k],
-                                    prep["Vc"][row0 + k], t_ext)
+                                    prep["Vc"][row0 + k], t_ext, kp, ki)
             th_p.append(th[:-1]); om_p.append(om[:-1])
             th0, om0 = th[-1], om[-1]                       # the feedback
         th_p = torch.cat(th_p).numpy(); om_p = torch.cat(om_p).numpy()
@@ -185,13 +205,14 @@ def fig_window_sweep(prep, meta, model, ck, val_runs, n_runs_avg=20):
     for r in val_runs[:n_runs_avg]:
         row0 = r * W
         th0, om0 = prep["theta0_abs"][row0], prep["omega0"][row0]
+        kp, ki = gains_for(prep, model, row0)               # None for a fixed-gain model
         f_w, t_w = [], []
         for k in range(W):
             truth_k = prep["theta_abs"][row0 + k]
-            th, om = predict_window(model, ck, th0, om0, prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext)
+            th, om = predict_window(model, ck, th0, om0, prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext, kp, ki)
             f_w.append(((th[:-1] - truth_k) ** 2).mean().item())
             th0, om0 = th[-1], om[-1]                        # the feedback
-            th2, _ = predict_window(model, ck, prep["theta0_abs"][row0 + k], prep["omega0"][row0 + k], prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext)
+            th2, _ = predict_window(model, ck, prep["theta0_abs"][row0 + k], prep["omega0"][row0 + k], prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext, kp, ki)
             t_w.append(((th2[:-1] - truth_k) ** 2).mean().item())
         fed_sq.append(f_w); tru_sq.append(t_w)
 
@@ -228,13 +249,20 @@ def fig_error_by_window(data, prep, meta, model, ck, tr, va):
     from train_pll import build_branch, batches
     from pll_residual import compute_theta_omega
     W, seg = meta["W"], data["segment_id"]
-    branch = build_branch(prep, ck["mu"], ck["sd"])
+    # gstat from the CHECKPOINT, so the gain columns are normalised exactly as in training.
+    # Omitting it on a gains model builds a 378-wide branch for a 380-wide first layer:
+    # "mat1 and mat2 shapes cannot be multiplied (256x378 and 380x128)".
+    branch = build_branch(prep, ck["mu"], ck["sd"],
+                          ck.get("gstat") if getattr(model, "n_extra", 0) else None)
     def stats(mask):
         tens = tuple(t[mask] for t in (branch, prep["Vq"], prep["target_theta"], prep["target_omega"]))
         n = int(mask.sum()); TH, OM, TT, TO = [], [], [], []
         for br, Vq, tth, tom in batches(tens, n, 256, False, "cpu", False):
             B = br.shape[0]
             tq = prep["t_local"].view(1,-1,1).expand(B,-1,1).clone().requires_grad_(True)
+            # Kp/Ki are deliberately not passed: with output_dim=2 theta and omega are
+            # direct network outputs, and only the RESIDUAL terms use the gains -- which
+            # this figure discards. Do not read o["r1"]/o["r2"] here without passing them.
             o = compute_theta_omega(model, tq, br, Vq.unsqueeze(-1), omega_nominal=0.0)
             TH.append(o["theta"].detach()); OM.append(o["omega"].detach())
             TT.append(tth.unsqueeze(-1)); TO.append(tom.unsqueeze(-1))
@@ -270,6 +298,13 @@ def fig_residual_budget(data, meta):
     of the two terms."""
     dt, Ki, Kp, W = meta["dt"], meta["Ki"], meta["Kp"], meta["W"]
     S = meta["S"]
+    # On a gains family Kp/Ki vary per run and meta carries only the config defaults,
+    # so the bar heights would silently describe a controller no run actually used.
+    # Use the dataset's own medians and say which was used in the title.
+    gains_note = ""
+    if "kp" in data:
+        Kp, Ki = float(data["kp"].median()), float(data["ki"].median())
+        gains_note = f"  (per-run gains: MEDIAN Kp={Kp:.1f}, Ki={Ki:.0f})"
     k    = max(3, min(51, (S // 10) | 1))   # odd kernel, never longer than S/10
     trim = k
     seg = data["segment_id"]
@@ -289,16 +324,32 @@ def fig_residual_budget(data, meta):
     ax.bar(x + 0.25, noise,   0.25, label="Ki*(Vq sensor noise)  (irreducible)")
     ax.set_yscale("log"); ax.set_xlabel("window index")
     ax.set_ylabel("RMS [rad/s^2]"); ax.legend(fontsize=8); ax.grid(alpha=0.3, axis="y")
-    ax.set_title("Residual budget: a PERFECT model would still score |Kp*dVq/dt|")
+    ax.set_title("Residual budget: a PERFECT model would still score |Kp*dVq/dt|" + gains_note)
     fig.tight_layout()
     fig.savefig(GRAPHS / "06_residual_budget.png", dpi=DPI)
     plt.close(fig)
 
 
 if __name__ == "__main__":
-    data, meta, prep, model, ck, tr, va = load_all()
+    import argparse
+    p = argparse.ArgumentParser(description=__doc__)
+    # The old defaults were the n=1000 PROTOTYPE with no faults and a pre-limiter
+    # checkpoint, so figures 01-06 described a model nothing downstream still uses.
+    # They are kept only so an old command still runs; pass the real ones.
+    p.add_argument("--dataset", default="pll_dataset.npz")
+    p.add_argument("--ckpt", default="pll_deeponet.pth")
+    p.add_argument("--split_seed", type=int, default=0,
+                   help="must match the checkpoint's, or figures 03-05 score the model on "
+                        "runs it trained on")
+    a = p.parse_args()
+
+    data, meta, prep, model, ck, tr, va = load_all(a.dataset, a.ckpt, a.split_seed)
     val_runs = sorted(set(prep["run_id"][va].tolist()))
-    print(f"{meta['n_runs']} runs, W={meta['W']}, S={meta['S']}, dt={meta['dt']}")
+    print(f"{a.dataset}  +  {a.ckpt}")
+    print(f"{meta['n_runs']} runs, W={meta['W']}, S={meta['S']}, dt={meta['dt']}, "
+          f"faults={meta.get('disturbances', {}).get('enabled')}, "
+          f"gains_model={bool(getattr(model, 'n_extra', 0))}, "
+          f"limit={meta.get('freq_limit')}")
 
     fig_initial_conditions(data, meta);                          print("01 done")
     fig_lock_check(data, meta);                                  print("02 done")

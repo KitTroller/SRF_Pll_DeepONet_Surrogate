@@ -17,6 +17,14 @@ WHY THIS WAS WORTH RUNNING AT ALL. F46 reported capacity as flat and the README 
 it, but `hidden_dim` only ever moved `sizes[-1]` -- the latent contraction width. The
 interior width and the depth had never been varied (F63). They are not flat.
 """
+
+# src/ on the path: these scripts live in src/analysis/ but import the pipeline
+# modules (paths, PLL_Simulator, train_pll, sweep) that stay in src/. Running
+# `python src/analysis/foo.py` puts src/analysis on sys.path, not src/.
+# Same pattern as hpc/generate_family.py.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 import argparse
 import glob
 import json
