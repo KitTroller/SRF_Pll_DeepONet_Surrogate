@@ -119,7 +119,7 @@ def assemble_batch(batch, t_local, mu, sd):  # DO NOT READ UNUSED should be dele
     # print(f"Shapes are: branch: {branch.shape}, t_query: {t_query.shape}, Vq: {Vq.unsqueeze(-1).shape}, target_theta: {target_theta.unsqueeze(-1).shape}, target_omega: {target_omega.unsqueeze(-1).shape}")
     return branch, t_query, Vq.unsqueeze(-1), target_theta.unsqueeze(-1), target_omega.unsqueeze(-1)
 
-def run_epoch(model, tensors, n, t_local, w_omega, w_phys, s1, s2, batch_size, optimizer=None, device="cpu", residual="eq4", limit=None, beta=0.05):
+def run_epoch(model, tensors, n, t_local, w_omega, w_phys, s1, s2, batch_size, optimizer=None, device="cpu", residual="eq4", limit=None, beta=0.05, gstat=None):
     is_train = optimizer is not None
     model.train(is_train)
     tot = {"theta": 0.0, "omega": 0.0, "r1": 0.0, "r2": 0.0, "phys": 0.0, "total": 0.0}    
@@ -131,7 +131,7 @@ def run_epoch(model, tensors, n, t_local, w_omega, w_phys, s1, s2, batch_size, o
         # these columns are filled with the YAML scalars, so the maths is identical.
         out  = compute_theta_omega(model, t_query, branch, Vq.unsqueeze(-1), omega_nominal=0.0,
                                    residual=residual, Kp=kp.view(-1, 1, 1), Ki=ki.view(-1, 1, 1),
-                                   limit=limit, beta=beta)
+                                   limit=limit, beta=beta, gstat=gstat)
         l_th = nn.functional.mse_loss(out["theta"], tth.unsqueeze(-1))
         l_om = nn.functional.mse_loss(out["omega"], tom.unsqueeze(-1))
         # each residual divided by the RMS of the terms it is BUILT from, so both
@@ -169,7 +169,7 @@ def load_checkpoint(path, device="cpu"):
 ARCHS = {"deeponet": Unstacked_DeepONet, "pinn": Single_PINN}
 
 
-def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=512, val_frac=0.15, patience=20, seed=0, split_seed=0, F=None, out=None, device=DEVICE, n_eval_runs=20, results_dir="sweeps", runs_dir="runs", max_freq=None, hidden_dim=None, arch="deeponet", residual="eq4", n_layers=None, width=None):
+def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=512, val_frac=0.15, patience=20, seed=0, split_seed=0, F=None, out=None, device=DEVICE, n_eval_runs=20, results_dir="sweeps", runs_dir="runs", max_freq=None, hidden_dim=None, arch="deeponet", residual="eq4", n_layers=None, width=None, split_trunk=False, gains_on_trunk=False):
     torch.manual_seed(seed)
     data, meta = Dataset_Creator.load_dataset(dataset)
     prep = prepare(data, deviation=True)
@@ -187,6 +187,9 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
     print(f"mu={mu:.4f} sd={sd:.4f} w_omega={w_omega:.4e} | s1={s1:.3f} rad/s  s2={s2:.3f} rad/s^2")
 
     has_gains = "kp" in prep
+    if gains_on_trunk and not has_gains:
+        raise ValueError("--gains_on_trunk needs a dataset that carries per-run Kp/Ki "
+                         f"(generated with --gains); {dataset} is fixed-gain")
     gstat = None
     if has_gains:
         kmu, ksd = prep["kp"][tr].mean(), prep["kp"][tr].std()
@@ -195,7 +198,9 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
         print(f"per-run gains ON: Kp {prep['kp'].min():.1f}-{prep['kp'].max():.1f} "
               f"(mu {kmu:.1f} sd {ksd:.1f}) | Ki {prep['ki'].min():.0f}-{prep['ki'].max():.0f} "
               f"(mu {imu:.0f} sd {isd:.0f})")
-    branch = build_branch(prep, mu, sd, gstat)
+    # gains go to EXACTLY ONE place. gstat is still computed and saved either way, because
+    # predict_window and compute_theta_omega normalise the trunk's gains with it.
+    branch = build_branch(prep, mu, sd, None if gains_on_trunk else gstat)
     # per-row Kp/Ki for the residual: from the data when sampled, else the YAML scalars
     kp_col = prep["kp"] if has_gains else torch.full_like(prep["omega0"], float(KP))
     ki_col = prep["ki"] if has_gains else torch.full_like(prep["omega0"], float(KI))
@@ -217,6 +222,8 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
     if hidden_dim is not None: ov["hidden_dim"] = hidden_dim
     if n_layers is not None: ov["n_layers"] = n_layers
     if width is not None: ov["width"] = width
+    if split_trunk is not None: ov["split_trunk"] = split_trunk
+    if gains_on_trunk is not None: ov["gains_on_trunk"] = gains_on_trunk
     model = ARCHS[arch](ov=ov).to(device)
 
     
@@ -226,6 +233,8 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
            + (f"_w{width}" if width is not None else "")
            + ("" if arch == "deeponet" else f"_{arch}")
            + ("" if residual == "eq4" else f"_{residual}")
+           + ("_st" if split_trunk else "")
+           + ("_gt" if gains_on_trunk else "")
            + ("_g" if has_gains else ""))
     results_dir = _sweeps(results_dir)
     Path(runs_dir).mkdir(exist_ok=True); Path(results_dir).mkdir(parents=True, exist_ok=True)
@@ -244,8 +253,8 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
     history = {"train": [], "val": []}
     status = "ok"
     for ep in range(1, epochs + 1):
-        trm = run_epoch(model, tr_t, n_tr, t_local, w_omega, w_phys, s1, s2, batch_size, opt, device, residual, lim, lbeta)
-        vam = run_epoch(model, va_t, n_va, t_local, w_omega, w_phys, s1, s2, batch_size, None, device, residual, lim, lbeta)
+        trm = run_epoch(model, tr_t, n_tr, t_local, w_omega, w_phys, s1, s2, batch_size, opt, device, residual, lim, lbeta, gstat=gstat)
+        vam = run_epoch(model, va_t, n_va, t_local, w_omega, w_phys, s1, s2, batch_size, None, device, residual, lim, lbeta, gstat=gstat)
         if (not np.isfinite(vam["total"])) or (ep > 3 and vam["total"] > 50 * best):
             status = "diverged"
             print(f"[{tag}] DIVERGED at epoch {ep}: val total {vam['total']:.3e} "
@@ -275,6 +284,9 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
            "seed": seed, "split_seed": split_seed, "lr": lr,
            "arch": arch, "residual": residual, "gains": bool(has_gains),
            "freq_limit": lim, "n_layers": n_layers, "width": width,
+           # in the record, not only in the tag: an analysis that has to parse `_st`/`_gt`
+           # out of a filename is how an arm gets silently merged into the wrong cell
+           "split_trunk": bool(split_trunk), "gains_on_trunk": bool(gains_on_trunk),
            "params": sum(p.numel() for p in model.parameters()),
            "batch_size": batch_size, "device": str(device),
            "n_eval_runs": n_eval_runs,

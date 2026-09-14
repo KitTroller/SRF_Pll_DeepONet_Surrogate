@@ -1,0 +1,85 @@
+# exp28 -- split trunk x gains placement, on the famO deliverable. 28 jobs.
+#
+#     sh hpc/submit.sh hpc/exp28_architecture.txt arch hpc/job_sweep_long16.sh
+#
+# NO GENERATION: every arm trains on famO_W40.npz, already on the cluster. Only the
+# architecture moves, so the records are directly comparable across arms -- same
+# dataset, same --split_seed 0 -- exactly like the capacity grid.
+#
+# A 2x2 FACTORIAL, two independent flags:
+#
+#                         shared trunk          --split_trunk
+#     gains in branch     baseline              A     _st
+#     --gains_on_trunk    B     _gt             A+B   _st_gt
+#
+# All four at the deliverable architecture, L3_w128 with gains. The baseline already has
+# seeds 0-3 in sweeps_famO_W40_cap; seeds 4-7 are added here so every cell has 8.
+#
+# WHY 8 SEEDS, AND WHY THE BASELINE TOO. F24's seed spread on the deployed metric reaches
+# 1.6x. Change A's plausible effect is ~1.1-1.2x, which sits inside a 4-seed min/max. And
+# comparing a 4-seed cell against 8-seed cells is the exact artefact that made the
+# hidden-dim figure mislead: a range over fewer draws is narrower by construction.
+#
+# WHAT EACH ARM COSTS. Measured before submitting, not assumed:
+#     baseline     139,840 params
+#     A  (+st)     148,096   +8,256 (+5.9%)  trunk's last layer width->2*hidden_dim
+#     B  (+gt)     139,840   +0             two inputs move branch->trunk
+#     A+B          148,096   +8,256
+# famO L3_w128 measured 26.5-34.7 h at 8 cores, over hpc's 24 h, so these run on milan at
+# 16 cores. Neither change moves the cost meaningfully.
+#
+# VERIFIED BEFORE SUBMISSION (scratch test, all 4 arms): constructs; branch/trunk input
+# widths move as designed; save_checkpoint -> load_checkpoint round-trips both flags;
+# the training path (compute_theta_omega + gstat) and the inference path (predict_window)
+# agree to 2.5e-7 rad; the output responds to Kp/Ki in every arm, so the gains are not
+# silently dropped; an existing flagship checkpoint still loads with both flags False.
+#
+# PRE-REGISTERED, before looking. Three of the last five predictions here were wrong.
+#   B  (gains on trunk) recovers a meaningful part of the ~2.5x tunable-gains penalty
+#      (F57/F60), i.e. beats baseline by more than 1.2x. If it is flat, that penalty is
+#      about having two extra input dimensions at all, not about where they enter.
+#   A  (split trunk) is a coin-flip: the argument is structural, not measured. Flat is a
+#      perfectly honest outcome and should be reported as one.
+#   A+B is NOT assumed to be the product of A and B.
+#   Worst case (rollout_full_max) is reported alongside RMS for every arm -- F70 showed
+#   depth helping RMS while hurting the peak, and a limiter claim is a peak claim.
+#
+# WATCH: the gains-on-trunk arms feed the trunk a per-sample input, which forecloses
+# evaluating the trunk once per batch. Not a cost today; a cost if that optimisation is
+# ever wanted.
+#
+# BEFORE READING THE RESULT: run hpc/pending.py, which now mirrors _st/_gt. Without that
+# mirror a finished arm would be reported missing and resubmitted.
+
+# --- baseline, seeds 4-7 (seeds 0-3 already exist in sweeps_famO_W40_cap) ---
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 4
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 5
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 6
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 7
+# --- A: split trunk ---
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 0 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 1 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 2 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 3 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 4 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 5 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 6 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 7 --split_trunk
+# --- B: gains on trunk ---
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 0 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 1 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 2 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 3 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 4 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 5 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 6 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 7 --gains_on_trunk
+# --- A+B: both ---
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 0 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 1 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 2 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 3 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 4 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 5 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 6 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 7 --split_trunk --gains_on_trunk

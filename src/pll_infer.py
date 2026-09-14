@@ -30,6 +30,8 @@ def predict_window(model, checkpoint, theta0, omega0, Va, Vb, Vc, times=None, kp
     t = checkpoint["t_local"] if times is None else times
     T = t.shape[0]
     cols = [torch.sin(theta0).view(1, 1), torch.cos(theta0).view(1, 1), ((omega0 - mu) / sd).view(1, 1), Va.view(1, -1), Vb.view(1, -1), Vc.view(1, -1)]
+    extra = None                                  # the trunk's gains; stays None unless gains_on_trunk
+    on_trunk = getattr(model, "gains_on_trunk", False)
     if getattr(model, "n_extra", 0):
         # gains model: Kp and Ki are INPUTS, appended in the same order build_branch uses.
         # Defaulting them silently would produce a confidently wrong answer, so refuse.
@@ -38,8 +40,12 @@ def predict_window(model, checkpoint, theta0, omega0, Va, Vb, Vc, times=None, kp
             raise ValueError("this checkpoint takes Kp and Ki as inputs -- pass kp= and ki= "
                              "to predict_window (and the checkpoint must carry 'gstat')")
         (kmu, ksd), (imu, isd) = gstat
-        cols += [torch.as_tensor((float(kp) - kmu) / ksd).view(1, 1).to(Va.dtype),
+        gains = [torch.as_tensor((float(kp) - kmu) / ksd).view(1, 1).to(Va.dtype),
                  torch.as_tensor((float(ki) - imu) / isd).view(1, 1).to(Va.dtype)]
+        if on_trunk:
+            extra = torch.cat(gains, dim=-1).view(1, 1, 2)        # (B=1, 1, n_extra) for expand
+        else:
+            cols += gains                                          # branch, as before
     branch = torch.cat(cols, dim=-1)
 
     if model.output_dim == 2:
@@ -48,7 +54,7 @@ def predict_window(model, checkpoint, theta0, omega0, Va, Vb, Vc, times=None, kp
         # then discarded -- measured 3x of the inference cost (58.0 -> 19.4 ms/sim-s).
         # Kp * (sensor noise) never enters the prediction either way.
         with torch.no_grad():
-            out = model(branch, build_trunk_input(t.view(1, T, 1), model.F, model.max_freq))
+            out = model(branch, build_trunk_input(t.view(1, T, 1), model.F, model.max_freq, extra=extra))
         return (out[0, :, 0] + theta0 + OMEGA_BASE * t).detach(), out[0, :, 1].detach()
 
     # single head: omega = dtheta/dt - Kp*Vq, so autograd IS required

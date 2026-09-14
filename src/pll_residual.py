@@ -44,16 +44,18 @@ def vq_from_prediction(branch, theta_dev, t_query):
     return _park_q(Va, Vb, Vc, theta_dev + theta0 + OMEGA_BASE * t_query)
 
 
-def build_trunk_input(t, F, max_F_freq):
+def build_trunk_input(t, F, max_F_freq, extra=None):
     feats =[t]
     if F > 0:
         for k in range(1, F + 1):
             w = max_F_freq * k / F
             feats += [torch.sin(w * t), torch.cos(w * t)]
+    if extra is not None:
+        feats.append(extra.expand(-1, t.shape[1], -1))
         
     return torch.cat(feats, dim=-1)
     
-def compute_theta_omega(model, t_query, branch, Vq, omega_nominal=None, residual="eq4", Kp=None, Ki=None, limit=None, beta=0.05):
+def compute_theta_omega(model, t_query, branch, Vq, omega_nominal=None, residual="eq4", Kp=None, Ki=None, limit=None, beta=0.05, gstat=None):
     """physics:  dtheta/dt = omega_0 + omega + Kp*Vq     (eq 1)
                  domega/dt = Ki*Vq                       (eq 2)
     Returns theta, omega and one residual per equation."""
@@ -67,7 +69,21 @@ def compute_theta_omega(model, t_query, branch, Vq, omega_nominal=None, residual
         omega_0 = 2 * torch.pi * pll_constants.Pll.f_0
     else:
         omega_0 = omega_nominal
-    trunk = build_trunk_input(t_query, model.F, model.max_freq)
+    # Gains on the trunk must be the NORMALISED values, exactly as predict_window builds
+    # them from gstat. Kp/Ki above are the PHYSICAL values the residual needs (Ki~300), and
+    # feeding those raw into a tanh MLP both saturates its first layer and disagrees with
+    # inference -- a train/infer mismatch nothing downstream would catch.
+    extra = None
+    if getattr(model, "gains_on_trunk", False):
+        if gstat is None:
+            raise ValueError("gains_on_trunk model: pass gstat= so the trunk sees the same "
+                             "normalised gains as training and predict_window")
+        (kmu, ksd), (imu, isd) = gstat
+        B = t_query.shape[0]
+        kp_n = ((torch.as_tensor(Kp) - kmu) / ksd).reshape(-1, 1, 1).expand(B, 1, 1)
+        ki_n = ((torch.as_tensor(Ki) - imu) / isd).reshape(-1, 1, 1).expand(B, 1, 1)
+        extra = torch.cat([kp_n, ki_n], dim=-1).to(t_query.dtype)      # (B, 1, 2)
+    trunk = build_trunk_input(t_query, model.F, model.max_freq, extra=extra)
     out = model.forward(branch, trunk)
     if model.output_dim ==1:
         theta = out

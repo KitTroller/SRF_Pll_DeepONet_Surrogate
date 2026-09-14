@@ -171,6 +171,12 @@ if __name__ == "__main__":
     p.add_argument("--width", type=int, default=None,
                    help="interior WIDTH of both nets; default 64. Distinct from "
                         "--hidden_dim, which sets the LATENT contraction width")
+    p.add_argument("--split_trunk", action="store_true",
+                   help="one trunk basis PER OUTPUT instead of one shared by theta and "
+                        "omega. Tag gets _st.")
+    p.add_argument("--gains_on_trunk", action="store_true",
+                   help="feed normalised Kp,Ki to the TRUNK instead of the branch "
+                        "(Choi et al. Model 3). Needs a --gains dataset. Tag gets _gt.")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--split_seed", type=int, default=0)
     p.add_argument("--epochs", type=int, default=800)
@@ -199,4 +205,5 @@ if __name__ == "__main__":
                split_seed=a.split_seed, F=a.F, max_freq=a.max_freq, hidden_dim=a.hidden_dim,
                device=a.device or T.DEVICE, n_eval_runs=a.n_eval_runs,
                results_dir=a.results_dir, arch=a.arch, residual=a.residual,
-               n_layers=a.n_layers, width=a.width)
+               n_layers=a.n_layers, width=a.width,
+               split_trunk=a.split_trunk, gains_on_trunk=a.gains_on_trunk)

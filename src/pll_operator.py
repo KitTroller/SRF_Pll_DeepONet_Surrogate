@@ -37,9 +37,13 @@ class Unstacked_DeepONet(nn.Module):
             self.trunk_sizes  = list(cfg["trunk_sizes"])
             self.branch_sizes = list(cfg["branch_sizes"])
             self.n_extra      = cfg.get("n_extra", 0)
+            self.split_trunk = cfg.get("split_trunk", False)
+            self.gains_on_trunk = cfg.get("gains_on_trunk", False)
         else:
             self.hidden_dim = ov.get("hidden_dim", model_config.hidden_dim)
             self.output_dim = ov.get("output_dim", model_config.output_dim)
+            self.split_trunk = ov.get("split_trunk", False)
+            self.gains_on_trunk = ov.get("gains_on_trunk", False)
             # n_layers moves DEPTH only; the interior width stays at the YAML value.
             # Note `hidden_dim` does NOT do this -- it only rewrites sizes[-1], i.e. the
             # latent contraction width, so F46 measured the latent dim and never the
@@ -60,13 +64,15 @@ class Unstacked_DeepONet(nn.Module):
             self.S = PLL_Constants.sensors
             self.F = ov.get("F", model_config.num_fourier_feats)
             S_win = ov.get("S_win", int(self.S / self.W))
-            self.trunk_sizes[0] += 2 * self.F
-            # n_extra: per-run scalars APPENDED to the branch (currently Kp, Ki when the
-            # dataset carries them). Appended at the END so the Va/Vb/Vc offsets, which
-            # pll_residual.vq_from_prediction parses positionally, are unchanged.
+            # n_extra: per-run scalars (currently Kp, Ki when the dataset carries them).
+            # They go to EXACTLY ONE net. Default: APPENDED to the branch, at the END so the
+            # Va/Vb/Vc offsets that pll_residual.vq_from_prediction parses positionally are
+            # unchanged. gains_on_trunk=True: appended to the trunk instead (Choi et al.
+            # Model 3), so the basis itself can change shape with the gains.
             self.n_extra = ov.get("n_extra", 0)
-            self.branch_sizes[0] += 3 * S_win + self.n_extra
-            self.trunk_sizes[-1]  = self.hidden_dim
+            self.trunk_sizes[0] += 2 * self.F + (self.n_extra if self.gains_on_trunk else 0)
+            self.branch_sizes[0] += 3 * S_win + (self.n_extra if not self.gains_on_trunk else 0)
+            self.trunk_sizes[-1] = self.hidden_dim * (self.output_dim if self.split_trunk else 1)
             self.branch_sizes[-1] = self.hidden_dim * self.output_dim  # one block per head because I wanted to
             
         self.trunk_net = MLP(self.trunk_sizes)
@@ -78,7 +84,7 @@ class Unstacked_DeepONet(nn.Module):
         sensors, num_fourier_feats or output_dim silently invalidates every .pth."""
         return {"arch": "Unstacked_DeepONet", "hidden_dim": self.hidden_dim, "output_dim": self.output_dim,
                 "F": self.F, "max_freq": self.max_freq, "trunk_sizes": self.trunk_sizes,
-                "branch_sizes": self.branch_sizes, "n_extra": self.n_extra}    
+                "branch_sizes": self.branch_sizes, "n_extra": self.n_extra, "split_trunk": self.split_trunk, "gains_on_trunk": self.gains_on_trunk}    
         
     def forward(self, branch_input, trunk_input):
         batch_size, num_timesteps, _ = trunk_input.shape
@@ -86,8 +92,8 @@ class Unstacked_DeepONet(nn.Module):
         branch_output = self.branch_net(branch_input)
         trunk_output = self.trunk_net(trunk_input)
         branch_output = branch_output.view(batch_size, self.output_dim, self.hidden_dim) # 2nd argument: output dimention, 3rd argument: a hidden dimention assumed common among all
-        trunk_output = trunk_output.view(batch_size, num_timesteps, self.hidden_dim)
-        output = torch.einsum('boh,bth->bot', branch_output, trunk_output)
+        trunk_output = trunk_output.view(batch_size, num_timesteps, self.hidden_dim) if not self.split_trunk else trunk_output.view(batch_size, num_timesteps, self.output_dim, self.hidden_dim)
+        output = torch.einsum('boh,bth->bot', branch_output, trunk_output) if not self.split_trunk else torch.einsum('boh,btoh->bot', branch_output, trunk_output)
         return output.transpose(1, 2)
     
         
