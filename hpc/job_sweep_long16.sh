@@ -15,6 +15,15 @@
 ### did not get unlucky on a slow node; 47 h simply is not enough for the tail of the
 ### epoch distribution. Asking for 8 more cores buys far more than asking for 1 more hour.
 ###
+### MEASURED 2026-09-15 -- THE SPEEDUP IS POOR, AND UNDER A SLOT CAP 16 CORES IS A LOSS.
+### famO L4_w128: 157.2 and 156.7 s/epoch at 8 cores, 126.4 s/epoch at 16 cores. That is
+### 0.80x the wall time for 2x the cores (a 1.24x speedup), not the 0.6-0.7x budgeted below.
+### milan also caps each user at 96 SLOTS ("milan_default_slot_limit"), so 16-core jobs run
+### 6 at a time against 12 at 8 cores -- and per-slot throughput at 16 cores is only 0.62x.
+### Use this script ONLY for a single cell that cannot fit 47 h at 8 cores (L4_w128 did not:
+### 38.6-43.7 h). L3_w128 fits at 8 cores (26.5-34.7 h); exp28 was wrongly sent here and had
+### 22 of 28 jobs pending on the slot limit until bmod -n 8.
+###
 ### THE SCALING IS REAL, not assumed. The cells killed at the 24 h cap reported
 ### CPU/wall = 7.99 on 8 cores, i.e. all 8 were saturated, so this workload does use what
 ### it is given. Do NOT expect a clean 2x: `t[idx]` gathers over a 200000 x 378 branch

@@ -20,13 +20,23 @@
 # comparing a 4-seed cell against 8-seed cells is the exact artefact that made the
 # hidden-dim figure mislead: a range over fewer draws is narrower by construction.
 #
-# WHAT EACH ARM COSTS. Measured before submitting, not assumed:
-#     baseline     139,840 params
-#     A  (+st)     148,096   +8,256 (+5.9%)  trunk's last layer width->2*hidden_dim
-#     B  (+gt)     139,840   +0             two inputs move branch->trunk
-#     A+B          148,096   +8,256
-# famO L3_w128 measured 26.5-34.7 h at 8 cores, over hpc's 24 h, so these run on milan at
-# 16 cores. Neither change moves the cost meaningfully.
+# WHAT EACH ARM COSTS. Counted from the trained checkpoints (2026-09-16). The pre-submit
+# scratch count was 1,024 low on every arm; the deltas were right:
+#     baseline     140,864 params
+#     A  (+st)     149,120   +8,256 (+5.9%)  trunk's last layer width->2*hidden_dim
+#     B  (+gt)     140,864   +0             two inputs move branch->trunk
+#     A+B          149,120   +8,256
+# famO L3_w128 measured 26.5-34.7 h at 8 cores, over hpc's 24 h, so these run on milan.
+# Neither change moves the cost meaningfully.
+#
+# SUBMIT WITH hpc/job_sweep_long.sh (8 cores), NOT job_sweep_long16.sh. It was first sent at
+# 16 cores and 22 of 28 jobs sat pending: milan caps each user at 96 slots, so only 6
+# 16-core jobs can run at once, and 16 cores measured just 0.80x the wall time of 8.
+# `bmod` is admin-only, so elements [7-28] were killed and resubmitted at 8 cores from
+# hpc/exp28_resubmit_8core.txt (array 29406107); elements [1-6] (baseline seeds 4-7,
+# split-trunk seeds 0-1) finished at 16 cores. The core count is not cosmetic: the same
+# seed re-run at 16 instead of 8 cores trains to a different model (exp25's famO L4_w128
+# seed 3: 1.16x on RMS, 1.43x on peak), so it acts like a fresh seed draw, not a bias.
 #
 # VERIFIED BEFORE SUBMISSION (scratch test, all 4 arms): constructs; branch/trunk input
 # widths move as designed; save_checkpoint -> load_checkpoint round-trips both flags;

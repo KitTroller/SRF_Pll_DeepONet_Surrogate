@@ -1,0 +1,38 @@
+# exp28, elements [7-28] resubmitted at 8 CORES. 22 jobs.
+#
+#     sh hpc/submit.sh hpc/exp28_resubmit_8core.txt arch8 hpc/job_sweep_long.sh
+#
+# WHY THIS FILE EXISTS. exp28 was first submitted with job_sweep_long16.sh. milan caps each
+# user at 96 slots, so only 6 16-core jobs could run and 22 sat pending on the slot limit.
+# `bmod -n 8` is admin-only on DTU LSF, so the pending elements are killed and resubmitted
+# here at 8 cores -- 12 can run at once, and 16 cores measured only 0.80x the wall time of 8.
+#
+# THESE ARE EXACTLY LINES 7-28 OF exp28_architecture.txt, in the same order. Lines 1-6
+# (baseline seeds 4-7, split-trunk seeds 0-1) are still RUNNING under job 29394498 and are
+# deliberately NOT here. Do not build this from pending.py: the running six have no records
+# yet, so it would list them as missing and they would train twice.
+#
+# Same --results_dir, distinct tags, so the records land beside the running six.
+
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 2 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 3 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 4 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 5 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 6 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 7 --split_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 0 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 1 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 2 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 3 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 4 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 5 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 6 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 7 --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 0 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 1 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 2 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 3 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 4 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 5 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 6 --split_trunk --gains_on_trunk
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_arch --seed 7 --split_trunk --gains_on_trunk

@@ -311,11 +311,17 @@ def paper_nn_at(case, dt, timeit=False):
 
 def head_to_head(dt_fine=12.5e-6, horizon=0.5, n_runs=24, their_range=True,
                  ckpt="runs/pll_dataset_n5000_W40_n5000_W40_F4_mf503_wp0.3_s1sp0.pth",
-                 dataset="pll_dataset_W40.npz"):
+                 dataset="pll_dataset_W40.npz", models=None):
     """Their NN vs ours vs the solver, ALL on the same voltage, same reference.
 
     Run it with their_range=True. With their_range=False their network is extrapolating
-    on vq by ~4x and the numbers say nothing about its accuracy."""
+    on vq by ~4x and the numbers say nothing about its accuracy.
+
+    `models`: optional {label: [ckpt, ...]}. Every checkpoint in a group is scored on the
+    SAME case, and rows[label] becomes a LIST of (err, ms), one per seed, so the figure can
+    draw a band instead of a point -- a single checkpoint carries up to ~2.9x of seed
+    variance on its own (see accuracy_benchmark). When `models` is None the original
+    single-`ckpt` behaviour is unchanged."""
     _, meta = Dataset_Creator.load_dataset(dataset)
     W, S, dt_c = meta["W"], meta["S"], meta["dt"]
     case = build_case(dt_fine, horizon, n_runs, their_range=their_range)
@@ -335,18 +341,32 @@ def head_to_head(dt_fine=12.5e-6, horizon=0.5, n_runs=24, their_range=True,
     th, ms = paper_nn_at(case, dt_c, timeit=True)           # forced onto our step
     rows["their NN @100us"] = (th[:, :W * S] - ref, ms)
 
-    torch.set_default_dtype(torch.float32)
-    model, ck = load_checkpoint(ckpt)
-    th, ms = deeponet_at(case, model, ck, W, S, dt_c, timeit=True)
-    rows["ours @100us"] = (th.double() - ref, ms)
+    if models is None:
+        torch.set_default_dtype(torch.float32)
+        model, ck = load_checkpoint(ckpt)
+        th, ms = deeponet_at(case, model, ck, W, S, dt_c, timeit=True)
+        rows["ours @100us"] = (th.double() - ref, ms)
+    else:
+        for label, paths in models.items():
+            seeds = []
+            for path in paths:
+                # load_checkpoint builds at the CURRENT default dtype and solve_at left it
+                # at float64 -- reset per load, exactly as the single-ckpt branch does
+                torch.set_default_dtype(torch.float32)
+                model, ck = load_checkpoint(path)
+                th, ms = deeponet_at(case, model, ck, W, S, dt_c, timeit=True)
+                seeds.append((th.double() - ref, ms))
+            rows[label] = seeds
 
     print(f"\nD. head to head, {'INSIDE THEIR TRAINING RANGE' if their_range else 'FULL'} envelope, "
           f"{n_runs} runs x {horizon} s, vs a {dt_fine*1e6:.1f} us reference")
-    rms = {}
-    for k, (e, ms) in rows.items():
-        rms[k] = float(e.pow(2).mean().sqrt())
-        print(f"   {k:18s} theta RMS {rms[k]:.3e}   "
-              f"max {float(e.abs().max()):.3e}   cost {ms:8.1f} ms/sim-s")
+    for k, v in rows.items():
+        group = v if isinstance(v, list) else [v]
+        r = [float(e.pow(2).mean().sqrt()) for e, _ in group]
+        c = [ms for _, ms in group]
+        band = f"  [{min(r):.3e} .. {max(r):.3e}], {len(r)} seeds" if len(r) > 1 else ""
+        print(f"   {k:34s} theta RMS {float(np.median(r)):.3e}{band}   "
+              f"cost {float(np.median(c)):8.1f} ms/sim-s")
 
     return rows
 

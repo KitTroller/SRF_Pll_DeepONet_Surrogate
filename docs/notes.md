@@ -1682,6 +1682,27 @@ solver, on 4 seeds, fully compliant with the limiter band (F71), and 19% cheaper
 L4_w128 which it ties within seed noise. Not sent wider: asked directly whether to test
 width 256 at depth 3, the supervisor said no.
 
+> **Updated 2026-09-16, exp25 landed -- the grid is 4/4 in every cell.** The w64 column
+> does not move, so the 1.5x-worse peak at w64 stands. The w128 column does:
+>
+> | L3->L4 at w128 | RMS, was -> now | worst case, was -> now |
+> |---|---|---|
+> | famN | 1.12x -> **1.07x** | 1.08x -> **1.00x** |
+> | famO | 1.09x -> **1.16x** | 0.87x -> **0.93x** |
+> | famR | 1.10x (unchanged) | 0.97x (unchanged) |
+>
+> So "7-12% on RMS" is **7-16%**. The famO shift is not the new seed, it is a RE-RUN: exp25
+> listed famO L4_w128 seed 3 as lost, but the 8-core run had finished (committed in
+> `23e41f5`), and exp25's 16-core copy of the same seed overwrote it. Same config, same seed,
+> different core count: RMS 7.87e-4 vs 6.76e-4 (**1.16x**), peak 1.89e-2 vs 1.32e-2
+> (**1.43x**), 1138 vs 916 epochs. With the original record kept, famO reads 1.09x / 0.87x,
+> exactly as before. Two things follow. (1) "ties within seed noise" is too generous:
+> L4_w128 is **1.09-1.16x better on RMS and 1.08-1.15x worse on peak**, for 23% more compute -- the
+> deliverable choice holds, the wording did not. (2) The thread count changes the trained
+> model by as much as a seed does, so `job_sweep_long.sh`'s "tiny numerical differences"
+> is wrong at the level of results. It is a fresh draw, not a bias, which is why mixing
+> 8- and 16-core seeds in one cell (exp28) is acceptable.
+
 `pending.py` was also fixed here. It emitted `_g` BEFORE `_L`/`_w` while `train_pll.py`
 emits it after, so every gains-AND-capacity cell was reported missing -- correct for
 famN/famR (capacity, no gains) and famW/famX (gains, no capacity), wrong for famO, the
@@ -3677,20 +3698,48 @@ things arrived after it:
 exp16  faults on/off, gain-box width      DONE   F62. Both predictions failed; keep
                                                  faults, keep the wide box. graphs/22
 exp17  Siemens frequency limiter          DONE   F65, F66, F67. graphs/24, 25, 26.
-       + the depth/width capacity grid            The L4_w128 frontier is still on the
-                                                  cluster (array 29348441, queue milan).
+       + the depth/width capacity grid            Frontier completed by exp25.
 exp23  white noise on/off                 DONE   F68. The prediction failed again; keep
                                                  the noise. graphs/27
 exp24  the same, at TUNABLE gains         DONE   F69. Sign flips with the gains, not the
        (famW/famX)                                limiter. graphs/27
-exp25  the 3 lost L4_w128 cells           RUNNING  milan, 16 cores. 47 h was 7% above the
-                                                   worst survivor; the fix was cores.
+exp25  the 3 lost L4_w128 cells           DONE   grid 4/4 everywhere; graphs/26, 26b redrawn.
+                                                 Seed 3 was not lost -- the re-run overwrote
+                                                 it. F70 update block.
 exp26  width 256 at depth 2 and 3         NOT SENT  asked directly, the supervisor said
                                                     no. Kept in hpc/ if that changes.
 exp27  famY, the 4th factorial corner     DONE   F69. 4/4, none capped. Its prediction
                                                  HELD (1.52x vs 1.59x predicted); the
                                                  factorial is closed and it is the gains.
+exp28  split trunk x gains-on-trunk       RUNNING  branch Architecture_Change. 2x2 on famO
+       (L3_w128, 8 seeds per cell)                 L3_w128, 28 jobs. Arrays 29394498 (arch,
+                                                   16 cores, elements 1-6 only) and 29406107
+                                                   (arch8, 8 cores, the other 22). Records ->
+                                                   sweeps_famO_W40_arch/, which also holds
+                                                   copies of baseline seeds 0-3.
+                                                   2026-09-16: 6/28 in (baseline 8/8, A 2/8),
+                                                   12 running, 10 pending (B s6-7, all of
+                                                   A+B). Service window Fri 18 Sep 20:00 ->
+                                                   Mon 21 Sep 09:00 covers both milan hosts,
+                                                   so pending jobs whose 47 h limit crosses it
+                                                   wait for Monday.
 ```
+
+**When exp28 lands:** pull `Hyperparameter_sweep/` and `runs/`; run
+`hpc/pending.py hpc/exp28_architecture.txt` on the cluster (it mirrors `_st`/`_gt`); check
+for `epochs_run == 1200`; read RMS **and** worst case from `sweeps_famO_W40_arch/` -- one
+dataset and one split, so the records compare directly. The pre-registration is in the
+`hpc/exp28_architecture.txt` header. Before timing or plotting a new-arm checkpoint, note
+that `src/analysis/speed_benchmark.py:64` and `pll_plots.py`'s `fig_error_by_window` do not
+pass `gstat` yet and will raise on a `--gains_on_trunk` model.
+
+**Scheduling facts learned the hard way (2026-09-15):** `milan` caps each user at 96 slots;
+16 cores measured only 0.80x the wall time of 8 (so 8 cores for anything that fits 47 h,
+L3_w128 included); `bmod` is admin-only; this account is not permitted on `man`.
+
+**Two speedup baselines, never to be mixed:** the flagship is 98x the *limited* trapezoid
+solver (the coupled theta/omega Newton iteration is ~3x slower); architectures on unlimited
+physics are ~40-55x the *unlimited* solver (`graphs/12`).
 
 ### Figures 01-06 were describing the wrong model, and two findings in them are stale
 
