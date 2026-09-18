@@ -153,6 +153,8 @@ A setting is only justified if the alternatives were measured. These were.
 | **narrowing the `Kp`/`Ki` box** | nothing (famM ties famL everywhere on a common test) | the apparent 1.36x gain was an easier validation split. The gains-as-inputs cost is about having two extra input dimensions at all, not about how wide they are | **F62** · `graphs/22` |
 | **removing the white measurement noise** | **1.02x** with the limiter and tunable gains, **1.60x WORSE** with tunable gains and no limiter. It helps only with FIXED gains (**1.52x / 1.59x**, limiter on / off) | and it costs **14-39x** if any noise is present. Measured over the complete (limiter × gains) factorial: the **gains** decide the sign, the limiter barely matters. The physics residual really does drop 6-30x — but that never reaches deployed error, because the noise was acting as a *regulariser*, not as a floor: the val/train gap doubles to quadruples without it | **F68, F69** · `graphs/27` |
 | **a 4th interior layer** (L3 → L4) | 7-16% on RMS, inside the 1.6x seed spread | and it makes **peak error 1.5x worse** at w64 in both limited families, at 23% more compute. All of "depth is worth 2.0-2.4x" is the **third** layer | **F70** · `graphs/26, 26b` |
+| **a split trunk** (one basis per output, `--split_trunk`) | **1.16×** worse RMS, **1.27×** worse peak, 7/8 seeds | +5.9% parameters for nothing. Untested guess: a shared basis suits θ and ω, two outputs one integral apart | **F72** · `graphs/28` (**branch `Architecture_Change`**) |
+| **`Kp`/`Ki` fed to the trunk** (`--gains_on_trunk`, Choi et al. Model 3) | **1.54×** worse RMS, **1.81×** worse peak, 8/8 seeds | worse on its own *training* set too, so not a generalisation gap. Where the gains enter matters, and the branch is the right place. Both together: 1.61× | **F72** · `graphs/28` |
 
 ### If you want something different — the levers, in order of usefulness
 
@@ -527,6 +529,7 @@ intermediate, so a stale figure is always one command away from being correct. R
 | 26 | depth × interior width, on a limited and an unlimited family (**branch `Siemens_Request`**) | `python src/analysis/capacity_grid.py` |
 | 26b | the same grid scored on **worst case** rather than RMS — depth's gain largely vanishes, width's does not | `python src/analysis/capacity_grid.py --metric rollout_full_max --out 26b_capacity_worstcase.png` |
 | 27 | white noise on/off × limiter × gains, every model scored on **both** truths (**branch `Siemens_Request`**) | `python src/analysis/noise_report.py` |
+| 28 | split trunk × gains placement on the deliverable, one dot per seed, on RMS, peak and training loss (**branch `Architecture_Change`**) | `python src/analysis/arch_report.py` |
 | Tunable_Kp_Ki_tests/01-02 | model menu; theta and omega split | `python src/analysis/model_menu.py` |
 | Tunable_Kp_Ki_tests/03 | error across the whole `(Kp, Ki)` box, gains vs fixed | `python src/analysis/gain_sensitivity.py runs/<gains tag>.pth` |
 | Tunable_Kp_Ki_tests/04-06 | prediction vs truth per model (W=40, W=20), plus the gain showcase | `python src/analysis/contenders.py` |

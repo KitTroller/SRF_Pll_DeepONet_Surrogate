@@ -70,6 +70,7 @@ def tag_for(line):
            + (f"_w{wd}" if wd else "")
            + ("_st" if "--split_trunk" in line.split() else "")
            + ("_gt" if "--gains_on_trunk" in line.split() else "")
+           + ("_ao" if "--anchor_omega" in line.split() else "")
            # _g LAST, matching train_pll.py:229. It used to be emitted BEFORE _L/_w, which
            # is wrong only for gains AND capacity together -- so famN/famR (capacity, no
            # gains) and famW/famX (gains, no capacity) both reported correctly while every

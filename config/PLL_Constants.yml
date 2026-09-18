@@ -15,3 +15,5 @@ freq_limit : null
 limit_beta: 0.05 # the clamp essentially hapens with 2 ReLU 1 normal, one inversed , to soften the corners for the derivative to be continuous we have this parameter determines the softness, max clamp error is beta*ln2 = 0.035
 # no limit_kaw key: the back-calculation gain is DERIVED as Ki/Kp so it stays correct
 # when Kp and Ki are per-run inputs (Ki/Kp spans 2..60 on a gains family).
+
+PROJECT_NAME: MEGAMIND

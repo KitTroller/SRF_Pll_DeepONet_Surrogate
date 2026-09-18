@@ -1618,6 +1618,103 @@ from 40 to 80, so the 0.5 s rollout now performs **twice as many handovers**. Co
 roughly doubles and cancels the per-window gain exactly. You cannot hold both the
 architecture and the handover count fixed while halving dt; exp6 chose architecture.
 
+### F73 — **THE HANDOVER IS THE RMS ERROR, THE PHASE JUMPS ARE THE PEAK. Anchoring omega is worth 1.2-1.35x for free.** `src/analysis/handover_test.py`. 4 seeds, 2026-09-18.
+
+Prompted by Rahul's co-simulation plots and by the visible omega steps at every window
+boundary in our own omega-error plot -- the "OPEN OBSERVATION" in the stage-status section,
+now measured. famO L3_w128_g seeds 0-3, 150 validation runs, inference only:
+
+| handed to the next window | theta RMS | omega RMS | theta peak |
+|---|---|---|---|
+| predicted theta and omega (deployed) | 7.6-8.9e-4 | 1.7-2.0e-2 | 1.0-2.0e-2 |
+| **same, omega anchored to its handed value** | **5.9-6.9e-4** | **0.8-1.1e-2** | unchanged |
+| true omega | 5.1-5.8e-4 | 0.5-0.6e-2 | unchanged |
+| true theta | 2.7-3.0e-4 | 2.7-3.2e-2 | unchanged |
+| both true (teacher forcing) | 2.0-2.1e-4 | 0.5-0.6e-2 | unchanged |
+
+**1. The steps are real and their mechanism is confirmed.** `predict_window` anchors theta to
+`theta0` but returns omega as a free network output, so window k+1's first omega is not
+window k's last: median step 1.3-1.9e-3 rad/s, p99 2.2-2.6e-2, max up to 0.19.
+
+**2. Anchoring omega after the fact -- `omega(t) = omega0 + N(t) - N(0)`, no retraining --
+improves theta RMS 1.30x / 1.30x / 1.20x / 1.35x and omega RMS 1.7-2.0x, on 4/4 seeds,** and
+removes the steps by construction. WHY a shift of the whole window helps and not just its
+first sample: with the TRUE omega0 given (teacher forcing, seed 0, 6000 windows) the network's
+omega at t=0 is off by a median 1.4e-3 rad/s, that start error correlates 0.79 with the error
+at the window's END, and subtracting it cuts within-window omega MSE 4.95x -- most of a
+window's omega error IS the start error, carried through (inline measurement, 2026-09-18, not
+in handover_test.py). The root cause is the targets: `target_theta` is relative to the window
+start (0 at t=0 in every sample) while `target_omega` is absolute, so the network has to copy
+omega0 through the branch and the dot product. It is physically exact rather than a patch: omega is the
+PI integrator's state and cannot jump, even through a phase jump. `t_local[0] == 0`, so
+`om[0]` is exactly the handover instant.
+
+**3. The peak is NOT a handover effect.** Teacher forcing leaves the worst case where it was,
+so it happens inside a single window. On seed 0, 8 of the 10 worst runs are phase jumps, the
+worst a 57.8 deg jump at the edge of the +/-60 deg training range; jumps >= 40 deg have a
+median peak of 6.0e-3 against 2.4e-3 for smaller ones, and only 7 of 150 validation runs
+have one. Rahul's largest co-simulation error is exactly this: a ~60 deg jump at t = 1.0 s
+(V1_q to ~1.25 with V1_d at ~-0.75), theta off by ~0.1 rad for ~50 ms.
+
+**What it means.** RMS is a handover problem (compounding); peak is a big-phase-jump problem.
+Two separate levers: anchoring for the first, more big-jump examples for the second (famZ in
+exp29 doubles them). Next training experiment: build the anchor INTO training so the network
+learns under it -- expected at least as good as the post-hoc 1.2-1.35x, not assumed better.
+Untested: whether Rahul's ~0.1 s steady-state ripple (8 windows x 12.5 ms = 5 grid cycles x
+20 ms) comes from the same handover steps.
+
+### F72 — **NEITHER ARCHITECTURE CHANGE HELPS. BOTH MAKE THE DELIVERABLE WORSE.** `graphs/28`, exp28. 31/32 seeds, 2026-09-18.
+
+Branch `Architecture_Change`. A 2x2 of `--split_trunk` (A) x `--gains_on_trunk` (B) on famO
+L3_w128 with gains, 8 seeds per cell (A+B seed 7 still running). One dataset, one
+`--split_seed`, one results dir -- the arms share a validation split and compare directly.
+Medians:
+
+| arm | params | deployed RMS | worst case | train_th | epochs | RMS / peak vs baseline |
+|---|---|---|---|---|---|---|
+| baseline (deliverable) | 140,864 | 8.28e-4 | 1.60e-2 | 2.60e-8 | 827 | -- |
+| A split trunk | 149,120 | 9.61e-4 | 2.03e-2 | 3.67e-8 | 944 | **1.16x / 1.27x worse** |
+| B gains on trunk | 140,864 | 1.28e-3 | 2.89e-2 | 9.59e-8 | 636 | **1.54x / 1.81x worse** |
+| A+B (7 seeds) | 149,120 | 1.33e-3 | 2.35e-2 | 8.58e-8 | 738 | **1.61x / 1.47x worse** |
+
+**On deployed RMS, B is worse than every baseline seed in 8/8 seeds (Mann-Whitney
+p = 1.6e-4), A+B in 7/7 (p = 3.1e-4), A in 7/8 (p = 1.1e-3).** Not one seed of any arm
+beats the best baseline seed on RMS, peak, `val_th` or `train_th`. The baseline itself is
+tight: 1.17x seed spread on RMS, so 8 seeds could resolve the ~1.2x effect this was sized
+for -- and the effects came back larger, in the other direction.
+
+**THE PREDICTIONS, HONESTLY SCORED.**
+- B was predicted to beat baseline by >1.2x. It is **1.54x worse** -- wrong, in a direction
+  I had not allowed for. The fallback reading ("if flat, the gains penalty is about having
+  two extra inputs at all") does not apply either, because it is not flat: *where* the
+  gains enter matters, and the branch is the right place. Choi et al.'s Model 3 result
+  does not transfer to this problem.
+- A was called a coin-flip with "flat" as an honest outcome. It is not flat: 1.16x worse
+  on RMS, 1.27x on peak. Small, but 7/8.
+- A+B was NOT assumed to be the product. Good: A x B would be 1.79x, measured 1.61x.
+
+**IT IS NOT A GENERALISATION GAP.** Every arm is worse on its OWN training set by about as
+much as on validation (B: 3.69x on `train_th`, 2.56x on `val_th`), so more data or
+regularisation would not close it. Whether B *cannot* fit (representation) or *stops
+before* it fits (optimisation) is not separable from these records: B also early-stops
+~190 epochs sooner. `compounding` looks better for B and A+B (3.65, 3.50 vs 4.10) -- that
+is the denominator trap again: their per-window error is 1.7x worse.
+
+**Why -- a hypothesis, NOT tested here.** The gains act *multiplicatively* on quantities
+that come from the input voltages (roughly `dω/dt = Kp·dVq/dt + Ki·Vq`). In the branch, the
+MLP can form gain x Vq products directly. On the trunk, the only place the gains meet the
+voltages is the 64-term dot product, so every such product has to be assembled from
+separable terms. Choi's parameters reshape the solution along the evaluation coordinate
+independently of the input function; ours multiply the input. For A, a shared basis builds
+θ and ω out of the same time functions, which suits two outputs that are one integral
+apart; splitting removes that constraint. Equally untested.
+
+**Decision.** The deliverable stays `famO_W40_..._L3_w128_g`: shared trunk, gains in the
+branch. The two flags stay in the code, off by default; every existing checkpoint loads
+unchanged. The supervisor's "slice the trunk" suggestion is answered with a measurement:
+1.16x worse. The ~2.5x tunable-gains penalty (F57/F60) is still unexplained, and it is not
+about placement.
+
 ### F71 — **THE LIMITER COMPLIANCE NUMBER, ON THE MODEL THAT SHIPS.** `graphs/25`, `25b`. 2026-09-10.
 
 Siemens' actual question is whether the surrogate honours `omega_0 +/- 2*pi*3` rad/s, and
@@ -3711,7 +3808,16 @@ exp26  width 256 at depth 2 and 3         NOT SENT  asked directly, the supervis
 exp27  famY, the 4th factorial corner     DONE   F69. 4/4, none capped. Its prediction
                                                  HELD (1.52x vs 1.59x predicted); the
                                                  factorial is closed and it is the gains.
-exp28  split trunk x gains-on-trunk       RUNNING  branch Architecture_Change. 2x2 on famO
+GPU    smoke test, hpc/job_gpu_smoke.sh   PLANNED 2026-09-18. The V100 never ran (cu130 torch
+                                                 has no Volta kernels); gpul40s instead. Gates
+                                                 exp29: its s/epoch picks the queue.
+exp29  famO x2 data (famZ, n=10000)       PLANNED 2026-09-18. hpc/job_gen_famZ.sh, then
+       + 4-seed GPU hardware control             hpc/exp29_more_data.txt on GPU. Why, design,
+                                                 queue rule and pre-registration in its header.
+exp28  split trunk x gains-on-trunk       DONE   F72, graphs/28 (A+B seed 7 still running on
+                                                 2026-09-18; cannot move the verdict). Both
+                                                 changes are worse. Original status below:
+                                                   branch Architecture_Change. 2x2 on famO
        (L3_w128, 8 seeds per cell)                 L3_w128, 28 jobs. Arrays 29394498 (arch,
                                                    16 cores, elements 1-6 only) and 29406107
                                                    (arch8, 8 cores, the other 22). Records ->
@@ -3758,6 +3864,8 @@ error is in window 0". On famO that is false: window 0 holds **7.8%** and the pe
 **17.8% at window 7**. The error no longer concentrates at acquisition -- it tracks wherever
 the limiter fires and the faults land. The old statement was measured on the unlimited
 n=1000 prototype and should not be quoted for the deliverable.
+
+**MEASURED 2026-09-18 -- see F73.** The observation below held; anchoring omega is worth 1.2-1.35x.
 
 **OPEN OBSERVATION, not yet a finding -- omega error is DISCONTINUOUS at the handover.**
 In the redrawn `graphs/03`, theta error is smooth across window boundaries while omega error
