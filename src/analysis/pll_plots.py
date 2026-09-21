@@ -21,6 +21,7 @@ from pll_infer import predict_window
 
 from paths import GRAPHS
 GRAPHS.mkdir(exist_ok=True)
+ANCHOR = False      # --anchor_omega: the F73/F74 post-hoc anchor on every rollout window
 DPI = 1024
 
 wrap = lambda x: (x + np.pi) % (2 * np.pi) - np.pi
@@ -153,7 +154,7 @@ def fig_prediction_vs_truth(prep, meta, model, ck, val_runs, n_show=10):
         for k in range(W):                                  # recurrent rollout
             th, om = predict_window(model, ck, th0, om0,
                                     prep["Va"][row0 + k], prep["Vb"][row0 + k],
-                                    prep["Vc"][row0 + k], t_ext, kp, ki)
+                                    prep["Vc"][row0 + k], t_ext, kp, ki, anchor_omega=ANCHOR)
             th_p.append(th[:-1]); om_p.append(om[:-1])
             th0, om0 = th[-1], om[-1]                       # the feedback
         th_p = torch.cat(th_p).numpy(); om_p = torch.cat(om_p).numpy()
@@ -209,10 +210,10 @@ def fig_window_sweep(prep, meta, model, ck, val_runs, n_runs_avg=20):
         f_w, t_w = [], []
         for k in range(W):
             truth_k = prep["theta_abs"][row0 + k]
-            th, om = predict_window(model, ck, th0, om0, prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext, kp, ki)
+            th, om = predict_window(model, ck, th0, om0, prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext, kp, ki, anchor_omega=ANCHOR)
             f_w.append(((th[:-1] - truth_k) ** 2).mean().item())
             th0, om0 = th[-1], om[-1]                        # the feedback
-            th2, _ = predict_window(model, ck, prep["theta0_abs"][row0 + k], prep["omega0"][row0 + k], prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext, kp, ki)
+            th2, _ = predict_window(model, ck, prep["theta0_abs"][row0 + k], prep["omega0"][row0 + k], prep["Va"][row0 + k], prep["Vb"][row0 + k], prep["Vc"][row0 + k], t_ext, kp, ki, anchor_omega=ANCHOR)
             t_w.append(((th2[:-1] - truth_k) ** 2).mean().item())
         fed_sq.append(f_w); tru_sq.append(t_w)
 
@@ -341,7 +342,12 @@ if __name__ == "__main__":
     p.add_argument("--split_seed", type=int, default=0,
                    help="must match the checkpoint's, or figures 03-05 score the model on "
                         "runs it trained on")
+    p.add_argument("--anchor_omega", action="store_true",
+                   help="anchor omega at every handover (F73/F74) in figures 03 and 04")
+    p.add_argument("--figs", nargs="+", default=["01", "02", "03", "04", "05", "06"],
+                   help="which figures to draw. 01, 02, 06 depend on the dataset only")
     a = p.parse_args()
+    ANCHOR = a.anchor_omega
 
     data, meta, prep, model, ck, tr, va = load_all(a.dataset, a.ckpt, a.split_seed)
     val_runs = sorted(set(prep["run_id"][va].tolist()))
@@ -351,10 +357,10 @@ if __name__ == "__main__":
           f"gains_model={bool(getattr(model, 'n_extra', 0))}, "
           f"limit={meta.get('freq_limit')}")
 
-    fig_initial_conditions(data, meta);                          print("01 done")
-    fig_lock_check(data, meta);                                  print("02 done")
-    fig_prediction_vs_truth(prep, meta, model, ck, val_runs);    print("03 done")
-    fig_window_sweep(prep, meta, model, ck, val_runs);           print("04 done")
-    fig_error_by_window(data, prep, meta, model, ck, tr, va);    print("05 done")
-    fig_residual_budget(data, meta);                             print("06 done")
+    if "01" in a.figs: fig_initial_conditions(data, meta);                          print("01 done")
+    if "02" in a.figs: fig_lock_check(data, meta);                                  print("02 done")
+    if "03" in a.figs: fig_prediction_vs_truth(prep, meta, model, ck, val_runs);    print("03 done")
+    if "04" in a.figs: fig_window_sweep(prep, meta, model, ck, val_runs);           print("04 done")
+    if "05" in a.figs: fig_error_by_window(data, prep, meta, model, ck, tr, va);    print("05 done")
+    if "06" in a.figs: fig_residual_budget(data, meta);                             print("06 done")
     print(f"-> {GRAPHS}")

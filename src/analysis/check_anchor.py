@@ -17,6 +17,10 @@ What the anchor must guarantee, and what each check proves:
   8  save -> load keeps the flag and the outputs              (a 30-hour run does not come back wrong)
   9  --anchor_omega exists on the CLI and in train_pll.main
  10  (--train) 2 epochs run end to end; tag ends _ao_g; record has anchor_omega
+ 11  the anchored forward + backward on MPS/CUDA if present. exp30 trains on a GPU, and a
+     tensor created on the CPU inside the anchor only fails there -- every other check runs
+     on the CPU. No optimizer: SOAP itself falls back to float64, which MPS refuses and CUDA
+     does not, so a full training step on MPS would test SOAP rather than the anchor
 """
 
 # src/ on the path: these scripts live in src/analysis/ but import the pipeline
@@ -40,6 +44,11 @@ from paths import ROOT
 from pll_infer import predict_window, _gains
 from pll_operator import Unstacked_DeepONet
 from pll_residual import compute_theta_omega
+
+# Importing PLL_Simulator (via pll_infer) flips the default dtype to float64 for the whole
+# process. A real training job imports train_pll first and trains in float32, and MPS
+# refuses float64 outright -- so put the process back where training actually runs.
+torch.set_default_dtype(torch.float32)
 
 CKPT = "famO_W40_n5000_W40_F4_mf503_wp0.3_s0sp0_L3_w128_g.pth"   # the deliverable, seed 0
 F73_NORMAL, F73_ANCHOR = 7.637e-4, 5.876e-4                      # handover_test.py, 150 runs
@@ -130,8 +139,8 @@ def main():
     try:
         o = compute_theta_omega(m, tq, branch, torch.zeros(B, t.numel(), 1), omega_nominal=0.0,
                                 Kp=kp, Ki=ki, gstat=gstat, omega0=om0)
-    except TypeError as e:
-        check("4b compute_theta_omega takes omega0=", False, str(e))
+    except Exception as e:
+        check("4b compute_theta_omega runs with omega0=", False, repr(e))
         return summary()
     d = float((o["omega"][:, 0, 0] - om0).abs().max())
     check("4b compute_theta_omega: omega(0) == omega0", d < 1e-5, f"max diff {d:.2e}")
@@ -186,6 +195,23 @@ def main():
               getattr(m2, "anchor_omega", False) is True and ck2["cfg"].get("anchor_omega") is True
               and torch.allclose(a1, a2), f"loaded anchor_omega = {getattr(m2, 'anchor_omega', 'MISSING')!r}")
 
+    # ---- 11: device -------------------------------------------------------------------
+    dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else None
+    if dev is None:
+        print("SKIP  11 no MPS/CUDA here -- the device check needs one")
+    else:
+        try:
+            md = fresh(True).to(dev)
+            tqd = t.to(dev).view(1, -1, 1).expand(B, -1, 1).clone().requires_grad_(True)
+            od = compute_theta_omega(md, tqd, branch.to(dev), torch.zeros(B, t.numel(), 1, device=dev),
+                                     omega_nominal=0.0, Kp=kp.to(dev), Ki=ki.to(dev), gstat=gstat,
+                                     omega0=om0.to(dev))
+            (od["omega"].pow(2).mean() + od["res_omega"].pow(2).mean()).backward()
+            dd = float((od["omega"][:, 0, 0].detach().cpu() - om0).abs().max())
+            check(f"11 anchored forward + backward on {dev}", dd < 1e-4, f"omega(0) off by {dd:.1e}")
+        except Exception as e:
+            check(f"11 anchored forward + backward on {dev}", False, repr(e)[:300])
+
     # ---- 9: CLI ----------------------------------------------------------------------
     helptext = subprocess.run([_sys.executable, str(ROOT / "src" / "sweep.py"), "--help"],
                               capture_output=True, text=True).stdout
@@ -198,13 +224,18 @@ def main():
             subprocess.run([_sys.executable, str(ROOT / "hpc" / "generate_family.py"), "--stem", "anch",
                             "--W", "40", "--n_runs", "20", "--lhs_seed", "99", "--freq_limit", "18.8496",
                             "--gains", "--outdir", tmp], check=True, capture_output=True)
-            rec = T.main(dataset=str(_Path(tmp) / "anch_W40.npz"), epochs=2, w_phys=0.3, patience=40,
-                         F=4, max_freq=503, n_layers=3, width=128, n_eval_runs=3, device="cpu",
-                         results_dir=str(_Path(tmp) / "sw"), runs_dir=str(_Path(tmp) / "runs"),
-                         anchor_omega=True)
-            check("10 2-epoch training runs; tag and record carry the anchor",
-                  rec.get("status") == "ok" and rec["tag"].endswith("_ao_g") and rec.get("anchor_omega") is True,
-                  f"status={rec.get('status')} tag=...{rec['tag'][-14:]} anchor_omega={rec.get('anchor_omega')}")
+            run = lambda dev, ep, sub: T.main(
+                dataset=str(_Path(tmp) / "anch_W40.npz"), epochs=ep, w_phys=0.3, patience=40, F=4,
+                max_freq=503, n_layers=3, width=128, n_eval_runs=3, device=dev, anchor_omega=True,
+                results_dir=str(_Path(tmp) / f"{sub}_sw"), runs_dir=str(_Path(tmp) / f"{sub}_runs"))
+            try:
+                rec = run("cpu", 2, "cpu")
+                check("10 2-epoch training runs; tag and record carry the anchor",
+                      rec.get("status") == "ok" and rec["tag"].endswith("_ao_g") and rec.get("anchor_omega") is True,
+                      f"status={rec.get('status')} tag=...{rec['tag'][-14:]} anchor_omega={rec.get('anchor_omega')}")
+            except Exception as e:
+                check("10 2-epoch training runs", False, repr(e)[:300])
+
     return summary()
 
 

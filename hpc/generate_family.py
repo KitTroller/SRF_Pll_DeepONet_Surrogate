@@ -62,6 +62,11 @@ def main():
                         "still DRAWN, so a family generated with this at the SAME "
                         "--lhs_seed is bit-paired with its noisy twin: same ICs, same "
                         "harmonics, same faults, same gains, only the noise term differs")
+    p.add_argument("--jump_deg", type=float, default=None,
+                   help="phase-jump half-range in degrees, default the YAML's 60. The angle is "
+                        "lo + (hi-lo)*u with u from the seeded LHS, so at the SAME --lhs_seed the "
+                        "family is bit-paired with its +/-60 twin: every jump scaled by jump_deg/60, "
+                        "everything else identical")
     p.add_argument("--freq_limit", type=float, default=None,
                    help="Siemens frequency limiter: clamp dtheta/dt to omega_0 +/- this "
                         "many rad/s. Omit for no limiter")
@@ -74,7 +79,7 @@ def main():
     # DIFFERENT objects and both have to be patched.
     gains = a.gains or a.kp_range is not None or a.ki_range is not None
     if (a.n_runs is not None or a.sensors is not None or a.omega_range is not None
-            or gains or a.no_faults or a.no_white_noise):
+            or gains or a.no_faults or a.no_white_noise or a.jump_deg is not None):
         import dataset_generator as DG
         import PLL_Simulator as PS
         if a.n_runs is not None:
@@ -98,6 +103,10 @@ def main():
             # differs. That makes a gain-box comparison PAIRED instead of two independent
             # draws, which is most of the reason this batch can use 4 seeds and not 16.
             DG.initial_conditions_config.disturbances.enabled = False
+        if a.jump_deg is not None:
+            # Only Dataset_Creator draws the fault parameters (create_disturbance_space);
+            # PLL_Simulator receives them per run and never reads the range itself.
+            DG.initial_conditions_config.disturbances.phase_jump.angle_deg = [-a.jump_deg, a.jump_deg]
         if a.no_white_noise:
             # BOTH objects, and PS is the one that matters. `PLLSimulator.__init__` takes
             # `initial_conditions=initial_conditions_config` defaulted to PLL_Simulator's

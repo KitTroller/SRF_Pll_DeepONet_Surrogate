@@ -177,6 +177,9 @@ if __name__ == "__main__":
     p.add_argument("--gains_on_trunk", action="store_true",
                    help="feed normalised Kp,Ki to the TRUNK instead of the branch "
                         "(Choi et al. Model 3). Needs a --gains dataset. Tag gets _gt.")
+    p.add_argument("--anchor_omega", action="store_true",
+                   help="each window's omega is forced to START at the omega it was handed: "
+                        "omega(t) = omega0 + N(t) - N(0). Two-head models only. Tag gets _ao.")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--split_seed", type=int, default=0)
     p.add_argument("--epochs", type=int, default=800)
@@ -206,4 +209,5 @@ if __name__ == "__main__":
                device=a.device or T.DEVICE, n_eval_runs=a.n_eval_runs,
                results_dir=a.results_dir, arch=a.arch, residual=a.residual,
                n_layers=a.n_layers, width=a.width,
-               split_trunk=a.split_trunk, gains_on_trunk=a.gains_on_trunk)
+               split_trunk=a.split_trunk, gains_on_trunk=a.gains_on_trunk,
+               anchor_omega=a.anchor_omega)

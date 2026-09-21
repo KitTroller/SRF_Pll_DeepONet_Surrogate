@@ -55,7 +55,7 @@ def build_trunk_input(t, F, max_F_freq, extra=None):
         
     return torch.cat(feats, dim=-1)
     
-def compute_theta_omega(model, t_query, branch, Vq, omega_nominal=None, residual="eq4", Kp=None, Ki=None, limit=None, beta=0.05, gstat=None):
+def compute_theta_omega(model, t_query, branch, Vq, omega_nominal=None, residual="eq4", Kp=None, Ki=None, limit=None, beta=0.05, gstat=None, omega0=None):
     """physics:  dtheta/dt = omega_0 + omega + Kp*Vq     (eq 1)
                  domega/dt = Ki*Vq                       (eq 2)
     Returns theta, omega and one residual per equation."""
@@ -95,6 +95,13 @@ def compute_theta_omega(model, t_query, branch, Vq, omega_nominal=None, residual
 
     theta = out[..., 0:1]
     omega = out[..., 1:2]
+    
+    if getattr(model,"anchor_omega", False):
+        if omega0 is None: raise ValueError("Cannot run anchored architecture without omega0")
+        t0 = torch.zeros_like(t_query[:, :1, :])
+        n0 = model.forward(branch, build_trunk_input(t0, model.F, model.max_freq, extra=extra))[..., 1:2]
+        omega = omega0.view(-1, 1, 1) + omega - n0
+        
     dtheta_dt = torch.autograd.grad(theta, t_query, torch.ones_like(theta), create_graph=True)[0]
     domega_dt = torch.autograd.grad(omega, t_query, torch.ones_like(omega), create_graph=True)[0]
     if residual == "eq6":                      # Vq from our own angle; see the docstring

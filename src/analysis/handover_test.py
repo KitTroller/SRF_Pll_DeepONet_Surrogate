@@ -2,16 +2,19 @@
 
     python src/analysis/handover_test.py 0 1 2 3        # famO L3_w128_g seeds
 
-Five rollouts per validation run, differing ONLY in what is handed to the next window:
+Seven rollouts per validation run, differing ONLY in what is handed to the next window:
     normal   predicted theta, predicted omega      the deployed rollout
     anchor   as normal, but each window's omega is shifted so it STARTS at the omega it
              was handed: omega(t) = omega0 + N(t) - N(0). The hard initial condition,
              applied after the fact to an existing checkpoint
+    anchor_th    the same for theta alone: theta(t) = theta0 + w_base*t + N(t) - N(0)
+    anchor_both  both at once
     true_om  predicted theta, TRUE omega
     true_th  TRUE theta,      predicted omega
     both     TRUE theta,      TRUE omega           = teacher forcing (per_window_rms)
 and the step each handover makes: the next window's first omega minus the omega it was
-handed. theta is anchored to theta0 by predict_window already; omega is a free output.
+handed. theta is HALF-anchored already -- predict_window adds theta0 exactly and the
+network is trained to output 0 at t=0 -- while omega is a free output.
 
 Anchoring is physically exact, not a patch: omega is the PI integrator's state, so it is
 continuous at every instant -- through a phase jump too. Only dtheta/dt may jump.
@@ -33,7 +36,7 @@ from paths import ROOT
 from pll_infer import predict_window, _gains
 from train_pll import load_checkpoint, prepare, group_split
 
-ARMS = ["normal", "anchor", "true_om", "true_th", "both"]
+ARMS = ["normal", "anchor", "anchor_th", "anchor_both", "true_om", "true_th", "both"]
 
 
 def main():
@@ -66,8 +69,10 @@ def main():
                     for k in ARMS:
                         th0, om0 = state[k]
                         th, om = predict_window(model, ck, th0, om0, *V, t_ext, kp, ki)
-                        if k == "anchor":
+                        if k in ("anchor", "anchor_both"):
                             om = om + (om0 - om[0])
+                        if k in ("anchor_th", "anchor_both"):
+                            th = th + (th0 - th[0])
                         if k == "normal" and w > 0:
                             steps.append(float(om[0] - om0))
                         pth[k].append(th[:-1]); pom[k].append(om[:-1])

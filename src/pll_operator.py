@@ -39,11 +39,13 @@ class Unstacked_DeepONet(nn.Module):
             self.n_extra      = cfg.get("n_extra", 0)
             self.split_trunk = cfg.get("split_trunk", False)
             self.gains_on_trunk = cfg.get("gains_on_trunk", False)
+            self.anchor_omega = cfg.get("anchor_omega", False)
         else:
             self.hidden_dim = ov.get("hidden_dim", model_config.hidden_dim)
             self.output_dim = ov.get("output_dim", model_config.output_dim)
             self.split_trunk = ov.get("split_trunk", False)
             self.gains_on_trunk = ov.get("gains_on_trunk", False)
+            self.anchor_omega = ov.get("anchor_omega", False)
             # n_layers moves DEPTH only; the interior width stays at the YAML value.
             # Note `hidden_dim` does NOT do this -- it only rewrites sizes[-1], i.e. the
             # latent contraction width, so F46 measured the latent dim and never the
@@ -74,7 +76,8 @@ class Unstacked_DeepONet(nn.Module):
             self.branch_sizes[0] += 3 * S_win + (self.n_extra if not self.gains_on_trunk else 0)
             self.trunk_sizes[-1] = self.hidden_dim * (self.output_dim if self.split_trunk else 1)
             self.branch_sizes[-1] = self.hidden_dim * self.output_dim  # one block per head because I wanted to
-            
+        if self.anchor_omega and self.output_dim == 1:
+            raise ValueError("Cannot anchor omega when there is no omega in output heads")
         self.trunk_net = MLP(self.trunk_sizes)
         self.branch_net = MLP(self.branch_sizes)
 
@@ -84,7 +87,8 @@ class Unstacked_DeepONet(nn.Module):
         sensors, num_fourier_feats or output_dim silently invalidates every .pth."""
         return {"arch": "Unstacked_DeepONet", "hidden_dim": self.hidden_dim, "output_dim": self.output_dim,
                 "F": self.F, "max_freq": self.max_freq, "trunk_sizes": self.trunk_sizes,
-                "branch_sizes": self.branch_sizes, "n_extra": self.n_extra, "split_trunk": self.split_trunk, "gains_on_trunk": self.gains_on_trunk}    
+                "branch_sizes": self.branch_sizes, "n_extra": self.n_extra, "split_trunk": self.split_trunk, "gains_on_trunk": self.gains_on_trunk,
+                "anchor_omega": self.anchor_omega}    
         
     def forward(self, branch_input, trunk_input):
         batch_size, num_timesteps, _ = trunk_input.shape

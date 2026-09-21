@@ -1,0 +1,51 @@
+# exp30 -- does training UNDER the omega anchor beat applying it afterwards? 12 jobs, GPU.
+#
+#     sh hpc/submit.sh hpc/exp30_anchor.txt anchor30 hpc/job_sweep_gpu.sh
+#
+# ONLY AFTER (1) python src/analysis/check_anchor.py --train shows 13/13 on the code you
+# pushed, and (2) hpc/job_gpu_smoke.sh came back with device "cuda" and < ~140 s/epoch
+# (1200 epochs must fit gpul40s's 47 h; n=5000 here, so the bar is double exp29's).
+#
+# WHY. F73: the network's omega at t=0 is not tied to the omega it was handed, and that
+# start error is carried through the window (corr 0.79 with the end error). Anchoring it
+# after the fact -- omega(t) = omega0 + N(t) - N(0) -- is worth 1.20-1.35x on theta RMS on
+# 4/4 deliverable seeds, no retraining. docs/ANCHOR_GUIDE.html has the mechanism.
+#
+# DESIGN. famO L3_w128 with gains, identical to exp28's baseline except for the flag:
+#
+#     A  --anchor_omega, GPU        seeds 0-7    THE QUESTION (tag ..._ao_g, no collision)
+#     C  unanchored, GPU            seeds 8-11   HARDWARE CONTROL, shared with exp29
+#
+# and, from checkpoints that already exist (no jobs):
+#     baseline unanchored           exp28's 8 CPU seeds, their own records
+#     baseline anchored post-hoc    the same 8, predict_window(..., anchor_omega=True)
+#
+# One dataset, one --split_seed, so the own-split records compare directly, as in exp28.
+# The control is here, not in exp29, because this experiment goes first: exp29 waits for
+# its smoke-test speed rule. It answers for both: if C lands inside the CPU baseline's seed range (RMS
+# 7.62-8.93e-4), the GPU is a fresh draw rather than a bias. SEEDS 8-11 because sweep.py has
+# no --runs_dir and famO seeds 0-7 unanchored would overwrite existing checkpoints --
+# seed 0 is the deliverable.
+#
+# PRE-REGISTERED, before looking.
+#   trained-anchored >= post-hoc-anchored >= 1.2x the unanchored baseline, on theta RMS.
+#   The second inequality is measured (F73); the first is the claim being tested.
+#   The worst case does not move: it is the big phase jumps, not the handover (F73 point 3).
+#   If trained-anchored is WORSE than post-hoc, the network was using its freedom at t=0
+#   for something, and post-hoc anchoring of the existing deliverable is what ships.
+#   Report omega RMS too: F73 measured 1.7-2.0x there, and Rahul's co-sim uses omega.
+
+# --- A: trained with the anchor ---
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_anchor --seed 0 --anchor_omega
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_anchor --seed 1 --anchor_omega
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_anchor --seed 2 --anchor_omega
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_anchor --seed 3 --anchor_omega
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_anchor --seed 4 --anchor_omega
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_anchor --seed 5 --anchor_omega
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_anchor --seed 6 --anchor_omega
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_anchor --seed 7 --anchor_omega
+# --- C: unanchored on the GPU, the hardware control (also serves exp29) ---
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_anchor --seed 8
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_anchor --seed 9
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_anchor --seed 10
+--dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_anchor --seed 11

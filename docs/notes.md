@@ -1079,6 +1079,8 @@ against a real run, not a synthetic benchmark.) A cluster CPU job is **~4x slowe
 this laptop. A V100 would beat MPS, but not by much and not reliably: the model is 45k
 parameters, so a step is ~4 GFLOPs against a V100's ~15 TFLOP/s — the GPU would be
 idle ~98% of the step, waiting on kernel launches. **This workload cannot use a big GPU.**
+*(Wrong, measured 2026-09-18: L3_w128 trains 16x faster on an L40S than on 8 milan cores.
+The V100 test meant to check this never ran -- no Volta kernels in the cu130 build.)*
 
 **What HPC actually buys is width.** Total data volume is fixed, so every W costs roughly
 the same per run (~25-30 min on MPS). 15 runs serial on the laptop is ~7 h with the
@@ -1618,6 +1620,108 @@ from 40 to 80, so the 0.5 s rollout now performs **twice as many handovers**. Co
 roughly doubles and cancels the per-window gain exactly. You cannot hold both the
 architecture and the handover count fixed while halving dt; exp6 chose architecture.
 
+### F75 — **THE LIMITER CERTIFICATE: NEITHER MODEL IS 0.00%. F71 measured the wrong family.** `src/analysis/compliance.py`. 8 seeds x 150 runs, 2026-09-21.
+
+F71's "0.00% outside the band" was measured on **famN** -- FIXED gains, because
+`limiter_trace.py` cannot pass Kp/Ki -- on one run and one seed, while the deliverable is
+**famO**, a tunable-gain model. F71 itself said "a demonstration, not a compliance
+certificate"; its title and the README then called it the model that ships. This is the
+certificate: every model on famO's 150 validation runs, each run's own Kp/Ki, faults and
+noise, frequency = np.gradient of the recurrent rollout minus omega_0, out = |f| > 1.02 L.
+
+| model (8 seeds) | out of band, all samples | out, where the truth is on the clamp | worst overshoot past L |
+|---|---|---|---|
+| TRUTH, same estimator (the floor) | 0.000% | 0.000% | -- |
+| deliverable, famO L3_w128_g | **0.074%** [max 0.091] | **1.85%** [2.27] | **7.7 rad/s** [10.1] = 1.2 Hz |
+| famO + anchor | 0.074% | 1.84% | 7.7 |
+| famQ | 0.055% [0.059] | 1.39% [1.49] | 4.0 [5.3] |
+| **candidate, famQ + anchor** | **0.055%** [0.058] | **1.38%** [1.46] | **4.0 rad/s** [5.2] = 0.64 Hz |
+
+The truth is on the clamp for 3.97% of samples, in 84 of 150 runs. **The deliverable is not
+compliant**: momentary excursions of up to ~1.2 Hz past the +/-3 Hz band on ~2% of the clamped
+samples. The candidate halves the worst excursion and cuts violations 1.35x; the anchor does
+nothing for compliance (it moves omega, not the theta slope within a window) -- the data does.
+Where they happen (seed 0 of each): not the estimator -- only 2-3% fall on a window boundary,
+the base rate; spread over runs with jumps (~50%), clean runs (~35%, acquisition) and sags,
+always with high Kp (median ~37 of 10-50), i.e. wherever the clamp is engaged hard. 29% of the
+deliverable's sit within 10 ms after a jump, 17% of the candidate's.
+
+**For Siemens this is the headline caveat, not a footnote**: the surrogate honours the band
+except for brief overshoots while the clamp is engaged. A fix with the anchor's logic is
+untested: the real PLL clamps dtheta/dt - omega_0 at +/-L, so clipping the surrogate's own
+dtheta/dt at +/-L and re-integrating theta within each window would make compliance exact by
+construction, at inference, with no retraining.
+
+### F74 — **DATA AND THE ANCHOR EACH BUY 1.2-1.3x, AND THEY STACK: famQ + anchor-after = 1.62x.** Training WITH the anchor does not beat adding it afterwards; wider jumps change nothing. `graphs/29`, exp29-31, `src/analysis/round29_31.py`. 2026-09-21.
+
+All 28 GPU runs finished (4.3-9 s/epoch; one control seed hit the 1200 cap at best epoch
+1197). **Common test: every model on the same 150 famO validation runs** -- fair for all:
+famO models validated on them, famQ is a different LHS draw, famO70's paired twins of these
+runs sit in its own validation split. Each non-anchored model also scored with the anchor
+applied after the fact. Medians over seeds:
+
+| group | n | theta RMS [range] | x baseline | worst case | omega RMS |
+|---|---|---|---|---|---|
+| baseline, CPU (the deliverable) | 8 | 8.28e-4 [7.62-8.93] | 1.00 | 0.0160 | 1.91e-2 |
+| baseline, GPU control | 4 | 8.59e-4 [8.24-9.15] | 0.96 | 0.0138 | 1.90e-2 |
+| baseline + anchor after | 8 | 6.34e-4 [5.88-6.86] | **1.31** | 0.0158 | 9.85e-3 |
+| anchor trained in (exp30) | 8 | 6.93e-4 [6.23-7.52] | 1.20 | 0.0132 | 1.07e-2 |
+| famQ, 2x data (exp29) | 8 | 6.91e-4 [6.57-7.47] | 1.20 | 0.0167 | 1.68e-2 |
+| **famQ + anchor after** | 8 | **5.11e-4 [4.75-5.81]** | **1.62** | 0.0139 | 8.60e-3 |
+| famO70, jumps to 70 (exp31) | 8 | 8.65e-4 [8.05-9.63] | 0.96 | 0.0226 | 1.97e-2 |
+
+**1. The deliverable WAS data-limited (exp29).** famQ beats every baseline seed, 8/8
+(Mann-Whitney p = 1.6e-4), 1.20x; 1.24x against the same-hardware GPU control. val/train gap
+4.10 -> 3.27. F55's "saturates at 5000" was a small-model result and does not hold at L3_w128.
+Pre-registration, honestly scored: ">= 1.2x on BOTH test splits" -- **met on both**: famO's
+split 1.20x, famQ's split (scored 2026-09-21, `round29_31.py --split famQ_W40.npz`) **1.28x**,
+8/8 and p = 1.6e-4 each. Each split is ALSO one family's early-stopping set, a small home
+advantage -- the famO split favours the baseline, the famQ split favours famQ -- so the truth
+sits between 1.20x and 1.28x. On famQ's split: famQ + anchor-after **1.68x**, anchor-after
+beats trained-in by 1.03x (p = 0.19, same direction as famO's 1.09x), and famQ's worst case
+is 1.71x better (p = 0.038) where famO's split showed none -- the worst case is a max over
+150 runs and swings with a handful of big-jump runs; the big-jump median peak improved on both
+splits (1.30x, 1.57x). "Gap falls to <= ~2.5" -- **not met** (3.27): training loss unchanged
+(2.60e-8 -> 2.50e-8), validation loss 1.32x lower (1.07e-7 -> 8.11e-8) -- it generalises
+better, it does not fit worse, which is the signature of a data-limited model with room left.
+The baseline is 1.11x worse on famQ's val runs than on famO's: the two draws differ in
+difficulty (F59/F61), which is why neither split alone is the answer. No famQ seed hit the
+epoch cap (573-960).
+
+**2. Training WITH the anchor does not beat adding it afterwards (exp30).** Trained-in is
+1.20x (8/8, p = 1.6e-4) but anchor-after on the same CPU checkpoints is 1.31x -- **1.09x better
+than training with it (p = 0.038)**; on the same-hardware GPU seeds 1.05x (p = 0.28, 4 seeds).
+The pre-registered "trained >= post-hoc" **FAILED**, and the pre-registered consequence
+applies: post-hoc anchoring is what ships. Why training under it is no better is not known.
+The anchor and the data STACK: famQ + anchor-after beats baseline + anchor-after 1.24x, 8/8.
+
+**3. Widening the jump range buys nothing (exp31).** famO's split: 0.96x (p = 0.13), worst case
+1.42x worse (p = 0.19 -- noisy). Jump sweep (limited truth, nominal Kp/Ki, 32 runs per angle,
+identical ICs at every angle): famO70's peak error matches the baseline at every angle
+20-75 deg. The pre-registered ">= 1.3x on 50-65 deg peaks" **FAILED** -- and the baseline is no
+worse at 65-75 deg than at 55-60 deg, so **there is no edge effect**: the model extrapolates
+past its training range. F73's "edge of the training range" reading was wrong.
+
+**4. What actually drives the peak** (inline, seed 0 with anchor-after, the 39 jump runs among
+famO's 150 val runs): peak tracks the jump angle (Spearman 0.69), and **the 5 worst jump runs
+all have Kp 37-46, the top of the 10-50 range**; the peak lands 2-11 ms after the jump, inside
+the same window. A large jump times a large Kp drives dtheta/dt far past the limiter clamp,
+so theta gets a kink at an arbitrary instant inside a 12.5 ms window that a smooth trunk basis
+cannot place -- representational, not coverage, and consistent with F48's never-separated
+hint that shorter windows handle discontinuities better. The nominal-Kp sweep understates it
+(peaks ~1.9e-3 there vs ~1e-2 at Kp ~45); a high-Kp sweep is the right stress test.
+
+**5. The GPU is a fresh draw, not a bias.** 3 of 4 GPU control seeds sit inside the CPU
+baseline's range (median 1.04x worse); every conclusion above also holds against it.
+
+**The new deliverable CANDIDATE: famQ L3_w128_g + `anchor_omega=True` at inference -- 1.62x the
+current deliverable on the common test, same architecture, so the same inference cost** (the
+anchor reuses the window's own t=0 output). Before it replaces `famO_..._L3_w128_g`:
+(a) famQ's own split -- DONE, 1.68x there; (b) the F71 limiter-compliance check on
+the candidate; (c) choose the shipping seed by famQ's OWN validation record (s2 is lowest,
+6.875e-4), never by this common test -- that would select on the test set; (d) Rahul's
+co-simulation.
+
 ### F73 — **THE HANDOVER IS THE RMS ERROR, THE PHASE JUMPS ARE THE PEAK. Anchoring omega is worth 1.2-1.35x for free.** `src/analysis/handover_test.py`. 4 seeds, 2026-09-18.
 
 Prompted by Rahul's co-simulation plots and by the visible omega steps at every window
@@ -1649,6 +1753,13 @@ omega0 through the branch and the dot product. It is physically exact rather tha
 PI integrator's state and cannot jump, even through a phase jump. `t_local[0] == 0`, so
 `om[0]` is exactly the handover instant.
 
+**2b. Anchoring THETA the same way buys nothing** (`anchor_th`, `anchor_both` arms): theta RMS
+0.1-0.3% WORSE on 4/4 seeds, alone or on top of the omega anchor. theta is already
+half-anchored -- `predict_window` adds `theta0` outside the network, and the target is 0 at
+t=0 in every sample, so the network learns N(0) ~ 0 (step p99 5e-5 rad). What is left of its
+t=0 offset is not carried through the window the way omega's is, so subtracting it only adds
+a tiny shift. The omega anchor alone is the change.
+
 **3. The peak is NOT a handover effect.** Teacher forcing leaves the worst case where it was,
 so it happens inside a single window. On seed 0, 8 of the 10 worst runs are phase jumps, the
 worst a 57.8 deg jump at the edge of the +/-60 deg training range; jumps >= 40 deg have a
@@ -1657,7 +1768,7 @@ have one. Rahul's largest co-simulation error is exactly this: a ~60 deg jump at
 (V1_q to ~1.25 with V1_d at ~-0.75), theta off by ~0.1 rad for ~50 ms.
 
 **What it means.** RMS is a handover problem (compounding); peak is a big-phase-jump problem.
-Two separate levers: anchoring for the first, more big-jump examples for the second (famZ in
+Two separate levers: anchoring for the first, more big-jump examples for the second (famQ in
 exp29 doubles them). Next training experiment: build the anchor INTO training so the network
 learns under it -- expected at least as good as the post-hoc 1.2-1.35x, not assumed better.
 Untested: whether Rahul's ~0.1 s steady-state ripple (8 windows x 12.5 ms = 5 grid cycles x
@@ -1666,7 +1777,8 @@ Untested: whether Rahul's ~0.1 s steady-state ripple (8 windows x 12.5 ms = 5 gr
 ### F72 — **NEITHER ARCHITECTURE CHANGE HELPS. BOTH MAKE THE DELIVERABLE WORSE.** `graphs/28`, exp28. 31/32 seeds, 2026-09-18.
 
 Branch `Architecture_Change`. A 2x2 of `--split_trunk` (A) x `--gains_on_trunk` (B) on famO
-L3_w128 with gains, 8 seeds per cell (A+B seed 7 still running). One dataset, one
+L3_w128 with gains, 8 seeds per cell; A+B seed 7 was lost to the wall clock on a slow node
+(~400 s/epoch), so A+B has 7. One dataset, one
 `--split_seed`, one results dir -- the arms share a validation split and compare directly.
 Medians:
 
@@ -1716,6 +1828,9 @@ unchanged. The supervisor's "slice the trunk" suggestion is answered with a meas
 about placement.
 
 ### F71 — **THE LIMITER COMPLIANCE NUMBER, ON THE MODEL THAT SHIPS.** `graphs/25`, `25b`. 2026-09-10.
+
+> **SUPERSEDED 2026-09-21 by F75.** This was famN (fixed gains), one run, one seed -- not the
+> model that ships. On famO, every run and seed: 0.074% out of band, worst 1.2 Hz past it.
 
 Siemens' actual question is whether the surrogate honours `omega_0 +/- 2*pi*3` rad/s, and
 until today the figure answering it scored the WRONG MODEL. `limiter_trace.py` globbed
@@ -3808,14 +3923,32 @@ exp26  width 256 at depth 2 and 3         NOT SENT  asked directly, the supervis
 exp27  famY, the 4th factorial corner     DONE   F69. 4/4, none capped. Its prediction
                                                  HELD (1.52x vs 1.59x predicted); the
                                                  factorial is closed and it is the gains.
-GPU    smoke test, hpc/job_gpu_smoke.sh   PLANNED 2026-09-18. The V100 never ran (cu130 torch
-                                                 has no Volta kernels); gpul40s instead. Gates
-                                                 exp29: its s/epoch picks the queue.
-exp29  famO x2 data (famZ, n=10000)       PLANNED 2026-09-18. hpc/job_gen_famZ.sh, then
-       + 4-seed GPU hardware control             hpc/exp29_more_data.txt on GPU. Why, design,
-                                                 queue rule and pre-registration in its header.
-exp28  split trunk x gains-on-trunk       DONE   F72, graphs/28 (A+B seed 7 still running on
-                                                 2026-09-18; cannot move the verdict). Both
+GPU    smoke test, hpc/job_gpu_smoke.sh   DONE 2026-09-18. famO L3_w128 at 7.95 s/epoch on an
+                                                 L40S vs ~127 on 8 milan cores: 16x. A full
+                                                 1200-epoch run is ~2.7 h, not ~30. The V100
+                                                 never ran (cu130 torch has no Volta kernels).
+                                                 The Stage D claim "this workload cannot use a
+                                                 big GPU" was an unmeasured FLOP estimate for
+                                                 the 45k-param model; it is wrong for L3_w128.
+exp29  famO x2 data (famQ, n=10000)       DONE 2026-09-21, F74: 1.20x, 8/8. Was PLANNED 2026-09-18. hpc/exp29_more_data.txt on
+                                                 GPU, 8 jobs, NO generation: famQ (exp17) IS
+                                                 famO at n=10000. Header has the queue rule.
+exp30  omega anchor, trained (F73)        DONE 2026-09-21, F74: 1.20x, but anchor-AFTER is 1.31x. Was PLANNED 2026-09-18. hpc/exp30_anchor.txt, 8 seeds
+       + the 4-seed GPU hardware control         --anchor_omega + 4 unanchored GPU seeds (8-11),
+         (moved here from exp29)                 the control for BOTH exp29 and exp30. Gate:
+                                                 src/analysis/check_anchor.py --train 13/13.
+exp31  famO70: jumps to +/-70 deg         DONE 2026-09-21, F74: nothing, no edge effect. SUBMITTED 2026-09-18 (array 29444565, jump31), 8 GPU
+       (edge test for F73's peak error)          jobs. famO70 generated in 116 s; pairing verified
+                                                 on all 5000 runs: 1250 jumps, ratio exactly 7/6,
+                                                 lhs/faults/gains/Va-without-jump bit-equal.
+                                                 hpc/generate_family.py gained --jump_deg.
+exp29/30 SUBMITTED 2026-09-18 15:53: data29 = 29444238 (8), anchor30 = 29444235 (12).
+       All three arrays wait for the service window; start Mon 21 Sep 09:00.
+exp28  split trunk x gains-on-trunk       DONE   F72, graphs/28. A+B seed 7 is LOST: at 44 h
+                                                 it was at epoch 398 (~400 s/epoch, 3x every
+                                                 other seed -- a slow node) and still
+                                                 improving, so the 47 h wall kills it with no
+                                                 record. F72 stands at 7 A+B seeds. Both
                                                  changes are worse. Original status below:
                                                    branch Architecture_Change. 2x2 on famO
        (L3_w128, 8 seeds per cell)                 L3_w128, 28 jobs. Arrays 29394498 (arch,
@@ -3853,7 +3986,10 @@ Until 2026-09-11 `pll_plots.py` had NO CLI: it was hardcoded to `pll_dataset.npz
 **faults OFF**) and `pll_deeponet.pth`, the original prototype. Every regeneration since the
 project moved to n=5000, faults, gains and the limiter has silently redrawn that prototype.
 It now takes `--dataset` / `--ckpt`, and 01-06 as committed are **famO_W40 + L3_w128_g** --
-the deliverable. Three bugs had to be fixed to make a gains model possible at all: the three
+the deliverable. *(2026-09-21: 03 and 04 redrawn with the famQ s0 + anchor candidate on the
+same famO val runs, `--anchor_omega --figs 03 04`: the omega staircase is gone, the 40-window
+error falls 8.2e-4 -> 4.9e-4 on those 20 runs, compounding 4.1 -> 3.1. 01, 02, 06 depend on
+the data only; 05 is the training path, which the post-hoc anchor does not touch.)* Three bugs had to be fixed to make a gains model possible at all: the three
 `predict_window` call sites passed no Kp/Ki (which that function refuses rather than
 defaults), `fig_error_by_window` built its branch without the gain columns (378 wide against
 a 380-wide layer), and `fig_residual_budget` used `meta["Kp"]`/`meta["Ki"]`, which on a gains

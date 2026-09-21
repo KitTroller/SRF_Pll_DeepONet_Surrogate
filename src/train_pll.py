@@ -124,14 +124,14 @@ def run_epoch(model, tensors, n, t_local, w_omega, w_phys, s1, s2, batch_size, o
     model.train(is_train)
     tot = {"theta": 0.0, "omega": 0.0, "r1": 0.0, "r2": 0.0, "phys": 0.0, "total": 0.0}    
     nb = 0
-    for branch, Vq, tth, tom, kp, ki in batches(tensors, n, batch_size, is_train, device, is_train):
+    for branch, Vq, tth, tom, kp, ki, omega0 in batches(tensors, n, batch_size, is_train, device, is_train):
         B = branch.shape[0]
         t_query = t_local.view(1, -1, 1).expand(B, -1, 1).clone().requires_grad_(True)
         # (B,1,1) so they broadcast against Vq (B,T,1). When the dataset has no gains
         # these columns are filled with the YAML scalars, so the maths is identical.
         out  = compute_theta_omega(model, t_query, branch, Vq.unsqueeze(-1), omega_nominal=0.0,
                                    residual=residual, Kp=kp.view(-1, 1, 1), Ki=ki.view(-1, 1, 1),
-                                   limit=limit, beta=beta, gstat=gstat)
+                                   limit=limit, beta=beta, gstat=gstat, omega0=omega0)
         l_th = nn.functional.mse_loss(out["theta"], tth.unsqueeze(-1))
         l_om = nn.functional.mse_loss(out["omega"], tom.unsqueeze(-1))
         # each residual divided by the RMS of the terms it is BUILT from, so both
@@ -169,7 +169,7 @@ def load_checkpoint(path, device="cpu"):
 ARCHS = {"deeponet": Unstacked_DeepONet, "pinn": Single_PINN}
 
 
-def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=512, val_frac=0.15, patience=20, seed=0, split_seed=0, F=None, out=None, device=DEVICE, n_eval_runs=20, results_dir="sweeps", runs_dir="runs", max_freq=None, hidden_dim=None, arch="deeponet", residual="eq4", n_layers=None, width=None, split_trunk=False, gains_on_trunk=False):
+def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=512, val_frac=0.15, patience=20, seed=0, split_seed=0, F=None, out=None, device=DEVICE, n_eval_runs=20, results_dir="sweeps", runs_dir="runs", max_freq=None, hidden_dim=None, arch="deeponet", residual="eq4", n_layers=None, width=None, split_trunk=False, gains_on_trunk=False, anchor_omega=False):
     torch.manual_seed(seed)
     data, meta = Dataset_Creator.load_dataset(dataset)
     prep = prepare(data, deviation=True)
@@ -204,7 +204,7 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
     # per-row Kp/Ki for the residual: from the data when sampled, else the YAML scalars
     kp_col = prep["kp"] if has_gains else torch.full_like(prep["omega0"], float(KP))
     ki_col = prep["ki"] if has_gains else torch.full_like(prep["omega0"], float(KI))
-    pack = lambda m: tuple(t[m].to(device) for t in (branch, prep["Vq"], prep["target_theta"], prep["target_omega"], kp_col, ki_col))
+    pack = lambda m: tuple(t[m].to(device) for t in (branch, prep["Vq"], prep["target_theta"], prep["target_omega"], kp_col, ki_col, prep["omega0"]))
     tr_t, va_t = pack(tr), pack(va)
     n_tr, n_va = int(tr.sum()), int(va.sum())
     t_local = prep["t_local"].to(device)
@@ -224,6 +224,7 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
     if width is not None: ov["width"] = width
     if split_trunk is not None: ov["split_trunk"] = split_trunk
     if gains_on_trunk is not None: ov["gains_on_trunk"] = gains_on_trunk
+    if anchor_omega is not None: ov["anchor_omega"] = anchor_omega
     model = ARCHS[arch](ov=ov).to(device)
 
     
@@ -235,6 +236,7 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
            + ("" if residual == "eq4" else f"_{residual}")
            + ("_st" if split_trunk else "")
            + ("_gt" if gains_on_trunk else "")
+           + ("_ao" if anchor_omega else "")
            + ("_g" if has_gains else ""))
     results_dir = _sweeps(results_dir)
     Path(runs_dir).mkdir(exist_ok=True); Path(results_dir).mkdir(parents=True, exist_ok=True)
@@ -287,6 +289,7 @@ def main(dataset="pll_dataset.npz", epochs=200, lr=3e-3, w_phys=0.0, batch_size=
            # in the record, not only in the tag: an analysis that has to parse `_st`/`_gt`
            # out of a filename is how an arm gets silently merged into the wrong cell
            "split_trunk": bool(split_trunk), "gains_on_trunk": bool(gains_on_trunk),
+           "anchor_omega": bool(anchor_omega),
            "params": sum(p.numel() for p in model.parameters()),
            "batch_size": batch_size, "device": str(device),
            "n_eval_runs": n_eval_runs,

@@ -1,0 +1,49 @@
+# exp31 -- is the big-phase-jump peak error an EDGE effect? famO70 = famO with jumps to
+# +/-70 deg. 8 jobs, GPU.
+#
+#     bsub < hpc/job_gen_famO70.sh                                   (~3 min, first)
+#     sh hpc/submit.sh hpc/exp31_jump70.txt jump31 hpc/job_sweep_gpu.sh
+#
+# submit.sh refuses until data/famO70_W40.npz exists and opens. Read the pairing check at
+# the end of the generation log (logs/gen_<jobid>.out) before submitting.
+#
+# WHY. F73 point 3: the worst case is not a handover effect -- teacher forcing leaves it
+# where it is -- it is the big phase jumps. On seed 0, 8 of the 10 worst runs are jumps, the
+# worst a 57.8 deg jump; jumps >= 40 deg have a median peak of 6.0e-3 against 2.4e-3 for
+# smaller ones. famO trains on +/-60 deg, so those sit at the EDGE of what it has seen, and
+# Rahul's co-simulation hit exactly that: a ~60 deg jump at t = 1.0 s, theta off by ~0.1 rad.
+#
+# DESIGN. famO70 is BIT-PAIRED with famO (job_gen_famO70.sh): same ICs, gains, sags, noise,
+# fault assignment -- every jump angle x 70/60 and nothing else. One factor. L3_w128 with
+# gains, identical flags to the baseline, on the GPU. Compared against exp30's 4 unanchored
+# GPU seeds (8-11) and exp28's 8 CPU baseline seeds.
+#
+# WHAT IT COSTS. The same number of jump runs now spans 140 deg instead of 120, so inside
+# +/-60 there are ~14% fewer jump examples per degree. The notes' standing warning applies:
+# three of four earlier distribution changes that "should" have helped cost more than they
+# bought. So the in-range number is part of the result, not a formality.
+#
+# HOW TO READ IT (script written when results land). Because the families are paired,
+# famO's validation runs are unseen by famO70's models and vice versa, and they are the SAME
+# runs apart from the jump angles:
+#   1. both model sets on famO's val split     -> in-range cost, overall RMS and peak
+#   2. both model sets on famO70's val split   -> the jump runs past 60 deg
+#   3. a jump sweep at fixed angles (30 ... 70 deg) on LIMITED truth, paired ICs
+#      -> the peak error as a function of jump size, which is the actual question
+#
+# PRE-REGISTERED, before looking.
+#   On jumps of 50-65 deg, famO70's median peak error beats famO's by >= 1.3x.
+#   On famO's own val split, famO70's RMS stays inside the baseline seed range
+#   (7.62-8.93e-4): the 14% density cost is not measurable.
+#   If the big-jump peak does NOT improve, big jumps are hard in themselves, not at the
+#   edge -- and the next lever is window length (F48's famE hint: 6x on +/-120 deg jumps,
+#   confounded with dt, never separated).
+
+--dataset famO70_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO70_W40 --seed 0
+--dataset famO70_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO70_W40 --seed 1
+--dataset famO70_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO70_W40 --seed 2
+--dataset famO70_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO70_W40 --seed 3
+--dataset famO70_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO70_W40 --seed 4
+--dataset famO70_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO70_W40 --seed 5
+--dataset famO70_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO70_W40 --seed 6
+--dataset famO70_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO70_W40 --seed 7

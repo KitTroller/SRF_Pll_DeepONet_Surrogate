@@ -1,10 +1,14 @@
-# exp29 -- is the deliverable DATA-LIMITED at its own size? 12 jobs, GPU.
+# exp29 -- is the deliverable DATA-LIMITED at its own size? 8 jobs, GPU.
 #
 #     sh hpc/submit.sh hpc/exp29_more_data.txt data29 hpc/job_sweep_gpu.sh
 #
-# ONLY AFTER (1) hpc/job_gen_famZ.sh has written data/famZ_W40.npz -- submit.sh refuses a
-# missing or truncated dataset anyway -- and (2) hpc/job_gpu_smoke.sh has come back with
-# an s/epoch that passes the rule under QUEUE below.
+# ONLY AFTER hpc/job_gpu_smoke.sh has come back with an s/epoch that passes the rule under
+# QUEUE below.
+#
+# NO GENERATION. famQ_W40.npz ALREADY EXISTS: exp17 generated it (job_gen_limiter.sh) as
+# famO's exact configuration -- limiter, tunable gains, noise, faults -- at n_runs 10000,
+# --lhs_seed 24. This file first asked for a new "famZ" at n=10000; that duplicated famQ and
+# needed 2 GB of a home quota at 28/30 GB. Caught 2026-09-18 before anything was generated.
 #
 # WHY. F55 ("data saturates near n=5000") was measured at L2_w64, where famO's val/train
 # gap is 1.52. The gap grows with capacity on the limited families and the deliverable
@@ -16,59 +20,57 @@
 #     famR (unlimited)       1.45     1.81      1.85
 #
 # F55 does not cover the deliverable, and F22 showed that closing a gap with data is real
-# here (n=1000 -> 5000: gap 2.60 -> 1.45, val_th 1.83x). This is the one lever left with
-# measured evidence behind it.
+# here (n=1000 -> 5000: gap 2.60 -> 1.45, val_th 1.83x). And F67 already saw famQ beat famO
+# by 1.09x at L2_w64 -- own splits, different LHS draws, flagged "not established". Nobody
+# has trained famQ at the deliverable's size, where the gap is 2.4x larger. This is the one
+# lever left with measured evidence behind it.
 #
-# DESIGN. Two arms, 12 jobs, all L3_w128 with gains, identical flags to exp28's baseline:
+# DESIGN. 8 jobs, L3_w128 with gains, identical flags to exp28's baseline:
 #
-#     famZ n=10000, GPU   seeds 0-7    THE QUESTION: twice the data
-#     famO n=5000,  GPU   seeds 8-11   HARDWARE CONTROL
+#     famQ n=10000, GPU   seeds 0-7    THE QUESTION: twice the data
+#     famO n=5000,  GPU   seeds 8-11   HARDWARE CONTROL -- MOVED TO exp30 (2026-09-18), which
+#                                      is submitted first; read it from sweeps_famO_W40_anchor/
 #
 # The control exists because this changes TWO things at once -- the data and the hardware
 # (the 8 baseline seeds ran on milan CPUs, these run on a GPU) -- which is exactly what
 # F68/F69 were built to avoid. A GPU run is a fresh draw (other kernels, another randperm
 # stream), and 8-vs-16 CPU cores already moved one seed by 1.16x, so the GPU gets its own
-# check: if the control lands inside the CPU baseline's seed range, any famZ difference
+# check: if the control lands inside the CPU baseline's seed range, any famQ difference
 # is the data. SEEDS 8-11, NOT 0-3: sweep.py has no --runs_dir, so famO seeds 0-7 would
 # overwrite existing checkpoints in runs/ -- seed 0 IS the deliverable.
 #
 # --epochs 1200 --patience 40 unchanged, so the protocol matches the baseline. One epoch is
-# one pass over the data, so famZ takes twice the gradient steps per epoch. F55's famG ran
-# into the cap at 2x data; a famZ seed that hits 1200 is under-trained, which biases AGAINST
+# one pass over the data, so famQ takes twice the gradient steps per epoch. F55's famG ran
+# into the cap at 2x data; a famQ seed that hits 1200 is under-trained, which biases AGAINST
 # more data. Check epochs_run before reading anything.
 #
-# QUEUE -- decided by the smoke test, not assumed. famZ at the 1200-epoch worst case costs
+# QUEUE -- decided by the smoke test, not assumed. famQ at the 1200-epoch worst case costs
 # 2 x 1200 x (smoke-test s/epoch at n=5000). job_sweep_gpu.sh asks gpul40s for 47 h:
 #     smoke s/epoch < ~70     gpul40s as written
 #     ~70 to ~105             change job_sweep_gpu.sh to  -q gpua100  and  -W 71:00
 #     > ~105                  the GPU does not make n=10000 affordable at L3_w128. STOP and
 #                             rethink before submitting; milan's 47 h fits neither.
 #
-# HOW TO READ IT. famZ and famO have different validation splits, so their own-split
+# HOW TO READ IT. famQ and famO have different validation splits, so their own-split
 # rollout_full_rms is NOT a common test (F59/F61). Every run of each family is unseen by
 # the other family's models, so both splits are fair held-out sets for both: score all
-# 20 checkpoints (8 CPU baseline, 4 GPU control, 8 famZ) on famO's val split AND famZ's,
+# 20 checkpoints (8 CPU baseline, 4 GPU control, 8 famQ) on famO's val split AND famQ's,
 # and report both. That needs a small cross-scoring script, written when results land.
 # Report RMS and worst case, as always.
 #
 # PRE-REGISTERED, before looking. The last two predictions here failed (F69's exp24, F72).
-#   famZ beats the baseline by >= 1.2x on deployed RMS on BOTH test splits, and its
+#   famQ beats the baseline by >= 1.2x on deployed RMS on BOTH test splits, and its
 #   val/train gap falls to <= ~2.5. If the gain is < 1.1x, the deliverable is not
 #   data-limited at this size either: the gap is where this setup sits, as F55 concluded
 #   for the small model, and the architecture is done -- write-up time.
 #   The GPU control lands inside the CPU baseline's seed range (RMS 7.62-8.93e-4).
 
-# --- famZ, n=10000: the question ---
---dataset famZ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 0
---dataset famZ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 1
---dataset famZ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 2
---dataset famZ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 3
---dataset famZ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 4
---dataset famZ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 5
---dataset famZ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 6
---dataset famZ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 7
-# --- famO, n=5000, on the GPU: the hardware control ---
---dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 8
---dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 9
---dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 10
---dataset famO_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 11
+# --- famQ, n=10000: the question ---
+--dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 0
+--dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 1
+--dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 2
+--dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 3
+--dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 4
+--dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 5
+--dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 6
+--dataset famQ_W40.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_famO_W40_data --seed 7

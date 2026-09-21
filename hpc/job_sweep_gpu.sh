@@ -5,12 +5,18 @@
 ###  - NOT gpuv100. The cluster .venv is torch 2.13.0+cu130, and CUDA 13 ships no Volta
 ###    kernels: the V100 benchmark died on its first tensor with "no kernel image is
 ###    available for execution on the device" (logs/benchgpu_29137820.err). So the GPU
-###    has NEVER been measured on this project -- the old "a V100 will not give an order
+###    was never measured before 2026-09-18 -- the old "a V100 will not give an order
 ###    of magnitude" was a FLOP estimate for the 45k-param model, not a result.
 ###    gpul40s (L40S, 48 h) is used instead; its "no double precision" does not matter,
 ###    training is float32 (train_pll.py:19). gpua100 (72 h) also works but queues deep.
-###  - run hpc/job_gpu_smoke.sh FIRST: 10 epochs, gives s/epoch against milan's ~127
-###    s/epoch (famO L3_w128, 8 cores). Do not send an experiment here before that.
+###  - MEASURED 2026-09-18 (hpc/job_gpu_smoke.sh): famO L3_w128 trains at
+###    7.95 s/epoch on an L40S against ~127 s/epoch on 8 milan cores -- 16x, and that 10-epoch
+###    figure includes CUDA start-up. The old "this workload cannot use a big GPU" was a FLOP
+###    estimate for the 45k-param model at batch 1; at batch 512 x 125 time points it can.
+###  - -W 8:00, sized from that number with ~1.5x headroom on the WORST case, 1200 epochs:
+###      n=5000  (famO): 1200 x  7.95 s = 2.7 h      n=10000 (famQ): 1200 x ~15.9 s = 5.3 h
+###    A 47 h request only hurts: LSF backfills short jobs first, and a service window
+###    blocks any job whose limit would cross it. Raise it for anything bigger than famQ.
 ###  - the rollout evaluation at the end of main() runs on CPU regardless
 ###    (load_checkpoint defaults to device="cpu") and is batch-size-1, ~12k calls
 ###    at W=40/n_eval=150. That is GPU time spent idle.
@@ -24,7 +30,7 @@
 #BSUB -R "span[hosts=1]"
 #BSUB -R "rusage[mem=4GB]"
 #BSUB -M 5GB
-#BSUB -W 47:00
+#BSUB -W 8:00
 ##BSUB -u your_email@dtu.dk
 #BSUB -o logs/%J_%I.out
 #BSUB -e logs/%J_%I.err

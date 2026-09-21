@@ -36,8 +36,15 @@ condition, so a 0.5 s trajectory is 40 handovers with no ground truth anywhere i
 > **F70** refines F66: the whole depth effect is the **third** layer (2.0-2.2×); the
 > fourth adds 7-16% on RMS and makes peak error **1.5× worse** at w64. The deliverable is
 > **`famO_W40_…_L3_w128_g`** — 3.95× better than the default at **98× the solver**, and
-> **F71** measures it at **0.00%** outside the ±3 Hz band where the L2_w64 baseline was
-> at 0.76% (`graphs/25b`).
+> **F71** measured **0.00%** outside the ±3 Hz band at L3_w128 — but on the fixed-gain famN,
+> one run. **F75** is the real certificate, on the tunable-gain deliverable over every run and
+> seed: **0.074%** of samples outside the band, brief overshoots of up to ~1.2 Hz while the clamp
+> is engaged. The famQ candidate halves that (0.055%, up to 0.64 Hz). Neither is exactly compliant.
+> **F74** (branch `Architecture_Change`): on one common test, **twice the data (famQ) and
+> anchoring ω at each handover each buy 1.2–1.3×, and they stack to 1.62×** at the same
+> inference cost. The anchor works best added at inference, not trained in. That makes
+> famQ + anchor the deliverable **candidate** (1.62× and 1.68× on the two test splits), pending
+> the limiter check and Rahul's co-simulation (`graphs/29`).
 > Generate a limited family with
 > `--freq_limit 18.8496`; omit it and every path is bit-identical to the unlimited one
 > (verified to 8.2e-13 rad).
@@ -154,6 +161,8 @@ A setting is only justified if the alternatives were measured. These were.
 | **removing the white measurement noise** | **1.02x** with the limiter and tunable gains, **1.60x WORSE** with tunable gains and no limiter. It helps only with FIXED gains (**1.52x / 1.59x**, limiter on / off) | and it costs **14-39x** if any noise is present. Measured over the complete (limiter × gains) factorial: the **gains** decide the sign, the limiter barely matters. The physics residual really does drop 6-30x — but that never reaches deployed error, because the noise was acting as a *regulariser*, not as a floor: the val/train gap doubles to quadruples without it | **F68, F69** · `graphs/27` |
 | **a 4th interior layer** (L3 → L4) | 7-16% on RMS, inside the 1.6x seed spread | and it makes **peak error 1.5x worse** at w64 in both limited families, at 23% more compute. All of "depth is worth 2.0-2.4x" is the **third** layer | **F70** · `graphs/26, 26b` |
 | **a split trunk** (one basis per output, `--split_trunk`) | **1.16×** worse RMS, **1.27×** worse peak, 7/8 seeds | +5.9% parameters for nothing. Untested guess: a shared basis suits θ and ω, two outputs one integral apart | **F72** · `graphs/28` (**branch `Architecture_Change`**) |
+| **training WITH the ω anchor** (`--anchor_omega`) | 1.20× — but anchoring the *same kind* of model after training gives 1.31× | 1.09× worse than adding it at inference (p = 0.038). Use `predict_window(..., anchor_omega=True)` on a normally trained model | **F74** · `graphs/29` |
+| **phase jumps to ±70° in training** (famO70) | nothing: 0.96× in range, identical peak at every jump angle 20–75° | there is no edge effect at 60° to fix — the model extrapolates past its range. Big-jump peaks come from jump × high Kp driving dθ/dt past the limiter mid-window | **F74** · `graphs/29` |
 | **`Kp`/`Ki` fed to the trunk** (`--gains_on_trunk`, Choi et al. Model 3) | **1.54×** worse RMS, **1.81×** worse peak, 8/8 seeds | worse on its own *training* set too, so not a generalisation gap. Where the gains enter matters, and the branch is the right place. Both together: 1.61× | **F72** · `graphs/28` |
 
 ### If you want something different — the levers, in order of usefulness
@@ -510,7 +519,7 @@ intermediate, so a stale figure is always one command away from being correct. R
 
 | # | figure | command |
 |---|---|---|
-| 01-06 | initial conditions, lock check, prediction vs truth, window sweep, error by window, residual budget | `python src/analysis/pll_plots.py --dataset famO_W40.npz --ckpt runs/famO_W40_n5000_W40_F4_mf503_wp0.3_s0sp0_L3_w128_g.pth` |
+| 01-06 | initial conditions, lock check, prediction vs truth, window sweep, error by window, residual budget. **03 and 04 show the famQ + anchor candidate** on famO's val runs (2026-09-21); 01, 02, 05, 06 the famO flagship | `python src/analysis/pll_plots.py --dataset famO_W40.npz --ckpt runs/famO_W40_n5000_W40_F4_mf503_wp0.3_s0sp0_L3_w128_g.pth`, then for 03/04 `--ckpt runs/famQ_W40_n10000_W40_F4_mf503_wp0.3_s0sp0_L3_w128_g.pth --anchor_omega --figs 03 04` |
 | 10 | Fourier arms of a sweep directory (`F=0` / `mf503` / `mf628`, every seed a dot) | `python src/analysis/plot_sweeps.py sweeps_famB_ff --kind arms` |
 | 11 | the `W` sweep | `python src/analysis/plot_sweeps.py sweeps_famB_W --kind W` |
 | 14 | the `w_phys` sweep | `python src/analysis/plot_sweeps.py sweeps_famB_wphys --kind wphys` |
@@ -529,6 +538,7 @@ intermediate, so a stale figure is always one command away from being correct. R
 | 26 | depth × interior width, on a limited and an unlimited family (**branch `Siemens_Request`**) | `python src/analysis/capacity_grid.py` |
 | 26b | the same grid scored on **worst case** rather than RMS — depth's gain largely vanishes, width's does not | `python src/analysis/capacity_grid.py --metric rollout_full_max --out 26b_capacity_worstcase.png` |
 | 27 | white noise on/off × limiter × gains, every model scored on **both** truths (**branch `Siemens_Request`**) | `python src/analysis/noise_report.py` |
+| 29 | exp29–31 on one common test: data, the ω anchor (trained vs added after), wider jumps; plus a phase-jump sweep 20–75° (**branch `Architecture_Change`**) | `python src/analysis/round29_31.py` (`--plot_only` redraws from the saved JSON) |
 | 28 | split trunk × gains placement on the deliverable, one dot per seed, on RMS, peak and training loss (**branch `Architecture_Change`**) | `python src/analysis/arch_report.py` |
 | Tunable_Kp_Ki_tests/01-02 | model menu; theta and omega split | `python src/analysis/model_menu.py` |
 | Tunable_Kp_Ki_tests/03 | error across the whole `(Kp, Ki)` box, gains vs fixed | `python src/analysis/gain_sensitivity.py runs/<gains tag>.pth` |

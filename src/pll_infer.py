@@ -25,7 +25,7 @@ def interp1d(x_src, y_src, x_query):
     return y_src[lo] + w * (y_src[hi] - y_src[lo])
 
 
-def predict_window(model, checkpoint, theta0, omega0, Va, Vb, Vc, times=None, kp=None, ki=None):
+def predict_window(model, checkpoint, theta0, omega0, Va, Vb, Vc, times=None, kp=None, ki=None, anchor_omega=False):
     mu, sd = checkpoint["mu"], checkpoint["sd"]
     t = checkpoint["t_local"] if times is None else times
     T = t.shape[0]
@@ -55,7 +55,11 @@ def predict_window(model, checkpoint, theta0, omega0, Va, Vb, Vc, times=None, kp
         # Kp * (sensor noise) never enters the prediction either way.
         with torch.no_grad():
             out = model(branch, build_trunk_input(t.view(1, T, 1), model.F, model.max_freq, extra=extra))
-        return (out[0, :, 0] + theta0 + OMEGA_BASE * t).detach(), out[0, :, 1].detach()
+            omega = out[0, :, 1]
+            if anchor_omega or getattr(model, "anchor_omega", False):
+                n0 = omega[0]
+                omega = omega0 + omega - n0
+        return (out[0, :, 0] + theta0 + OMEGA_BASE * t).detach(), omega.detach()
 
     # single head: omega = dtheta/dt - Kp*Vq, so autograd IS required
     with torch.enable_grad():
