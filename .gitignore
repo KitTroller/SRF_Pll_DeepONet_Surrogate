@@ -24,5 +24,6 @@ data/famF_W40.npz
 # deliverable. 1.0 GB, regenerable from hpc/job_gen_limiter.sh at --lhs_seed 22, and
 # NOT ignored by any pattern above -- a `git add -A` would have committed it.
 data/famO_W40.npz
+data/famQ_W40.npz
 #*.npz
 #data/*.npz
