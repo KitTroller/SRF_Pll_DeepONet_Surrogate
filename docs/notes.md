@@ -1620,7 +1620,159 @@ from 40 to 80, so the 0.5 s rollout now performs **twice as many handovers**. Co
 roughly doubles and cancels the per-window gain exactly. You cannot hold both the
 architecture and the handover count fixed while halving dt; exp6 chose architecture.
 
+### F78 — **GAIN SENSITIVITY, REDONE ON THE LIMITED SYSTEM: a fixed-gain model is 60x worse one step away.** `graphs/31`. 2026-09-26.
+
+F60's 38x (and `Tunable_Kp_Ki_tests/03`) was UNLIMITED physics at L2_w64 (famK vs famH), so it
+did not describe the paper's system. Redone with `gain_sensitivity.py`, which now sets the
+truth's limiter from the checkpoints (before, it always scored against UNLIMITED truth), on a
+6x6 (Kp, Ki) grid, 12 runs per cell, omega0 +/-2, the same seeded ICs in every cell:
+
+| model | at (25, 300) | box median | box worst |
+|---|---|---|---|
+| tunable famO s0, 5k, L3_w128 | 3.41e-4 | 4.33e-4 | 2.62e-3 (Kp 10, Ki 100) |
+| tunable famO40k **s6**, anchor trained in (FINAL flagship; graphs/31 as committed) | **1.80e-4** | 2.31e-4 | 1.32e-3 (Kp 10, Ki 100) |
+| tunable famO40k s2, anchor trained in (provisional flagship, first run) | 1.99e-4 | 2.60e-4 | 1.38e-3 (Kp 10, Ki 100) |
+| FIXED famN s0, 5k, L3_w128 (trained at 25/300 only) | 2.40e-4 | 3.94e-2 | -- |
+
+1. **Like-for-like (famN vs famO, both 5k L3_w128, no anchor):** at 25/300 the fixed model is
+   1.42x better (tunability's price at the operating point), but one grid step away
+   (Ki 300 -> 200) it is **60x worse**, and 91x over the box median. F60's "38x" is the
+   unlimited L2_w64 number; for the paper use 60x, and say it is like-for-like.
+2. **The flagship beats the fixed-gain model even at the fixed model's own tuning: 1.80e-4
+   vs 2.40e-4 (1.33x) for the final s6** (1.21x for s2). Not like-for-like (8x data + the anchor), but it means that in this
+   regime tunability no longer costs anything at the operating point.
+3. The worst cells are still the low-Kp, low-Ki corner in both tunable models (natural period
+   0.63 s at Ki=100, longer than the 0.5 s run, so part of it is a larger answer, as F60 said).
+4. Caveat: warm regime only (omega0 +/-2), 12 runs per cell, one seed per model.
+
+### F77 — **FOR PLAIN MODELS THE DATA CURVE HAS BENT (40k buys 1.01-1.06x over 20k); WITH THE ANCHOR TRAINED IN IT HAS NOT (1.17-1.23x), see the 2026-09-26 update.** `graphs/30`, exp33, plain 8/8; anchor-trained-in arm still running. 2026-09-25.
+
+Same script and protocol as F76 (`exp32_report.py` now also scores famO40k; groups already
+scored are reused from the saved JSON). 40k over 20k, median ratio and one-sided
+Mann-Whitney p (famO split / famQ split):
+
+| | 40k vs 20k, famO split | 40k vs 20k, famQ split |
+|---|---|---|
+| plain | 1.063x, p = 0.019 | 1.010x, p = 0.40 |
+| anchor added at inference | 1.052x, p = 0.032 | 1.062x, p = 0.19 |
+
+Against the 5k baseline: 40k plain 1.53x / 1.57x, 40k + anchor after **2.07x / 2.16x** (best
+median on both splits). Worst case 0.0078 / 0.0086, level with 20k + anchor after.
+
+1. **The gain is small and holds on only ONE of the two common tests.** By this file's rule
+   (trusted only when it holds on both) 40k does not beat 20k. Direction is consistent
+   across all four comparisons, so "at most ~6%" is the honest wording, not "none".
+2. **Returns per doubling: 5k -> 10k 1.20-1.28x, 10k -> 20k 1.20-1.22x, 20k -> 40k
+   1.01-1.06x.** val/train gap 4.10 -> 3.27 -> 1.99 -> 1.50. The pre-registered "the curve
+   has bent" HELD.
+3. **Cost doubled:** 7.6-11.4 h per seed vs 2.9-5.3 h at 20k. Seed 1 hit the 1200-epoch cap
+   (under-trained, which biases against 40k, by at most one seed of eight).
+
+~~**Flagship: stays famO20k plain seed 2 + anchor at inference,** unless the 40k anchor-trained
+arm surprises.~~ **It surprised -- see below.**
+
+**FINAL, 8/8 seeds, 2026-09-26: IT HOLDS ON BOTH COMMON TESTS.**
+
+| 40k anchor trained in (n=8) | famO split | famQ split |
+|---|---|---|
+| median RMS, x 5k baseline | 3.539e-4, **2.34x** | 3.914e-4, **2.36x** |
+| vs 40k + anchor after | **1.13x**, MW p = 0.0003, 7/8 below every after-seed | **1.09x**, p = 0.042, 2/8 |
+| paired by seed (after / trained) | 8/8 favour trained (1.02-1.23) | 7/8 (s7: 0.96) |
+| vs 20k anchor trained in | 1.18x, p = 8e-5 | 1.22x, p = 1.6e-4 |
+| worst case, median | 0.0064 (after: 0.0078) | 0.0077 (after: 0.0086) |
+| omega RMS, median | 5.80e-3 (after: 6.66e-3) | 6.44e-3 (after: 7.28e-3) |
+
+val/train gap median 1.49; own-split compounding median 2.92 (plain 40k: ~4.0).
+
+**FLAGSHIP, FINAL: `runs/famO40k_W40_n40000_W40_F4_mf503_wp0.3_s6sp0_L3_w128_ao_g.pth`** --
+seed 6 has the lowest OWN-split record (3.524e-4; s5 3.543e-4, s2 3.563e-4, all within 1.1%).
+Chosen on famO40k's own validation, never on the common tests; on those it scores 3.537e-4
+(famO split) and 4.127e-4 (famQ split, above its group median -- the seed choice is not
+tuned to the tests). graphs/03-05 re-rendered with it 2026-09-26.
+
+**UPDATE 2026-09-26 (later), 6 of 8 seeds (s0-s5): IT HOLDS.** famO split 3.561e-4 = **2.32x**,
+trained/after 1.125x, MW p = 0.0013, 5/6 below every after-seed; famQ split 3.866e-4 = **2.39x**,
+1.106x, p = 0.030, 2/6. Paired by seed: all 12 comparisons favour training it in (1.016-1.229).
+20k-trained -> 40k-trained 1.18x / 1.23x (p = 0.0003 / 0.0007). Worst case 0.0064 / 0.0063
+against 0.0078 / 0.0086. The early stopping is systematic, not a selection effect: s3-s5 stopped
+at 604-671 epochs too. **Own-split records: s5 3.543e-4 now edges s2 3.563e-4 (0.6%)** -- by the
+rule, s5 is the flagship candidate; wait for s6/s7 before re-rendering 03-05.
+
+**UPDATE 2026-09-26, anchor-TRAINED-in arm, 3 of 8 seeds (s0-s2) -- PROVISIONAL.**
+
+| 40k | famO split | famQ split |
+|---|---|---|
+| anchor trained in (n=3) | 3.579e-4, **2.31x** | 3.863e-4, **2.39x** |
+| anchor added at inference (n=8) | 4.007e-4, 2.07x | 4.277e-4, 2.16x |
+| trained in / after, median | **1.12x better**, MW p = 0.006, 3/3 below every after-seed | **1.11x better**, p = 0.024, 1/3 below every after-seed |
+| paired by seed (same init, same batches: the anchor adds no parameters) | 1.18, 1.23, 1.13 | 1.14, 1.20, 1.14 |
+
+Worst case 0.0057 / 0.0064 against 0.0078 / 0.0086; omega RMS 5.75e-3 vs 6.67e-3 rad/s;
+own-split compounding 2.84-3.08 against the plain models' 3.87-4.13.
+
+4. **The pre-registered "B ties A + anchor-after, as at 20k" FAILED.** The file's own
+   alternative reading applies: training under the anchor needs data to pay off.
+   after/trained across data, famO split: 0.92, 0.94, 1.01, **1.12** (5k/10k/20k/40k);
+   famQ split: 0.97, 0.89, 0.95, **1.11**. F74/F76's "the anchor belongs at inference" is
+   an n <= 20k statement, not a general one.
+5. **Point 2 above holds for plain models only.** With the anchor trained in, 20k -> 40k
+   buys **1.17x / 1.23x** -- as much as the earlier doublings. That curve has NOT bent, so
+   n=80000 is no longer unarguable. Not planned: no /work3, ~15-23 h per seed.
+6. **Caveat on the 3 seeds:** they are the lowest array indices, so they ran first by index,
+   not because they finished first. But they did early-stop sooner (611-711 epochs against
+   795-1200 for plain), and the 5 still running may be the slower-converging ones.
+   Re-read at 8/8 before naming a flagship.
+
+**Flagship if this holds at 8/8: famO40k anchor-trained, the seed with the lowest OWN-split
+record** (so far s2, 3.563e-4). Deployment is unchanged: `predict_window` applies the anchor
+automatically from the checkpoint's `anchor_omega` flag, and a caller that bypasses
+`predict_window` needs the same one line as before.
+
+### F76 — **DATA KEEPS PAYING TO 20k, AND THE ANCHOR BELONGS AT INFERENCE.** `graphs/30`, exp32, 24/24. 2026-09-24.
+
+`src/analysis/exp32_report.py`, both common tests, 8 seeds per group, each normalised to
+that split's 5k-plain median (famO split / famQ split):
+
+| | 5k | 10k | 20k |
+|---|---|---|---|
+| plain | 1.00 / 1.00 | 1.20 / 1.28 | **1.44 / 1.55** |
+| anchor added at inference | 1.31 / 1.27 | 1.62 / 1.68 | **1.96 / 2.03** |
+| anchor trained in | 1.20 / 1.23 | 1.52 / 1.50 | 1.98 / 1.94 |
+
+1. **20k beats 10k by 1.20-1.22x on both splits, 8/8 seeds beat every 10k seed, p = 1.6e-4**,
+   with and without the anchor -- as large as the 5k -> 10k step. The pre-registered
+   "1.05-1.15x" was WRONG: the data curve had not bent. val/train gap 4.10 -> 3.27 -> 1.97.
+   No 20k seed hit the epoch cap.
+2. **Adding the anchor at inference is never worse than training it in** (trained/after:
+   famO split 1.093, 1.064, 0.994; famQ split 1.028, **1.121 (p=0.015), 1.048 (p=0.021)** at
+   5k/10k/20k). The pre-registered "B and C do not beat their anchor-after counterparts"
+   HELD. It also has the better worst case at 20k (0.0073 vs 0.0083; 0.0092 vs 0.0113).
+3. **The worst case moved with data** (0.0160 -> 0.0073 on famO's split), which F74 point 4
+   had called representational and beyond data's reach. That reading was too pessimistic.
+
+**Flagship (provisional until exp33): famO20k plain, seed 2, anchor at inference.** Seed 2
+has the lowest own-split record (5.924e-4) -- chosen on famO20k's own validation, never on
+the common tests. `graphs/03-05` still show the 20k anchor-TRAINED-in seed 2 and should be
+re-rendered once exp33 settles the flagship. graphs/29's left panel is superseded by
+graphs/30; its right panels (the phase-jump sweep, exp31) stand.
+
 ### F75 — **THE LIMITER CERTIFICATE: NEITHER MODEL IS 0.00%. F71 measured the wrong family.** `src/analysis/compliance.py`. 8 seeds x 150 runs, 2026-09-21.
+
+**UPDATE 2026-09-26 -- the FINAL flagship family (famO40k, anchor trained in) added to
+`compliance.py`.** Same 150 famO runs (truth on the clamp 3.97% of samples, in 84 runs; the
+truth through the same estimator: 0.000%, the floor):
+
+| model | % out (all) | % out (clamped) | worst past the band |
+|---|---|---|---|
+| original deliverable famO 5k, median of 8 [max] | 0.074% [0.091] | 1.85% [2.27] | 7.68 rad/s = 1.22 Hz [10.08 = 1.60 Hz] |
+| famQ + anchor (the old candidate) | 0.055% [0.058] | 1.38% [1.46] | 4.02 = 0.64 Hz [5.24 = 0.83 Hz] |
+| **famO40k anchor trained in, median of 8 [max]** | **0.048% [0.056]** | **1.20% [1.40]** | **2.68 = 0.43 Hz** [4.17 = 0.66 Hz] |
+| **flagship s6** | **0.041%** | 1.03% | **2.91 rad/s = 0.46 Hz** |
+
+Still NOT exact -- the limiter is learned, not enforced -- but the worst overshoot is 2.9x
+smaller than the original deliverable's and the out-of-band fraction 1.5x smaller. The paper's
+contribution bullet ("0.055%, up to 0.64 Hz") quoted the famQ + anchor row; for the flagship
+say **0.041% of samples, at most 0.46 Hz past the band** (family median 0.048%, 0.43 Hz).
 
 F71's "0.00% outside the band" was measured on **famN** -- FIXED gains, because
 `limiter_trace.py` cannot pass Kp/Ki -- on one run and one seed, while the deliverable is
@@ -3942,6 +4094,71 @@ exp31  famO70: jumps to +/-70 deg         DONE 2026-09-21, F74: nothing, no edge
                                                  on all 5000 runs: 1250 jumps, ratio exactly 7/6,
                                                  lhs/faults/gains/Va-without-jump bit-equal.
                                                  hpc/generate_family.py gained --jump_deg.
+exp33  famO40k (n=40000), plain and       PLAIN DONE 2026-09-25 (8/8), F77: 40k over 20k 1.01-1.06x, one split
+                                                 only. Anchor-trained-in arm still RUNNING.
+                                                 Superseded peek below. PEEK 2026-09-24, 2 of 8
+                                                 plain seeds (s0, s2), both common tests: 40k plain
+                                                 1.53x / 1.55x the 5k baseline (20k: 1.44x / 1.55x),
+                                                 + anchor after 2.03x / 2.11x (20k: 1.96x / 2.03x) --
+                                                 40k over 20k only 1.00-1.06x. Gap 1.97 -> ~1.5. The
+                                                 data curve has bent, as pre-registered. PRELIMINARY.
+       (originally)                              PLANNED 2026-09-23. hpc/job_gen_famO40k.sh (--slim,
+       anchor trained in, 16 GPU jobs            ~5.2 GB, seed 28) then hpc/exp33_40k.txt with
+                                                 hpc/job_sweep_gpu_long.sh (16 h, 8 GB/core).
+                                                 Needs ~5 GB more free: delete famW/famX/famY
+                                                 (seed 22/22/21) and famR/famN_W40 (seed 21),
+                                                 all regenerable from hpc/job_gen_*.sh.
+                                                 NEW: generate_family.py --slim drops
+                                                 Vd/Vq/Valpha/Vbeta (load_dataset rebuilds them
+                                                 exactly, verified to 1.2e-7 = float32
+                                                 resolution on a 40-run pair); 35% smaller.
+                                                 Width 256 deferred: it costs inference time.
+                                                 AFTER the flagship is fixed: regenerate
+                                                 graphs 03/04/05 for it (pll_plots.py now takes
+                                                 --outdir, so old/current/new render side by
+                                                 side), then the W=20 speed-vs-accuracy test --
+                                                 note rewindow.py can only SUBDIVIDE (W40 ->
+                                                 W200), so a W=20 variant needs the family
+                                                 regenerated with --W 20 40 at the same seed.
+exp32  famO20k (n=20000) + anchor         SUBMITTED 2026-09-21, array 29453230 (r32), 24 GPU
+       trained in, at 10k and 20k                jobs; famO20k generated OK (4.04 GB).
+       DONE 2026-09-24, 24/24 -> F76. (UPDATE 2 of 2026-09-23 said the advantage of adding
+       the anchor at inference "is gone at 20k" -- true on famO's split only; WRONG on
+       famQ's split, where it is still 1.05x at 20k, p=0.02. See F76.)
+       UPDATE 2 2026-09-23: arm B 8/8, arm C 3/8. Anchor trained in vs added after
+       (trained/after median; >1 = adding after is better): 5k 1.093 (p=0.04), 10k 1.083
+       (3 seeds, p=0.28), 20k 0.994 (p=0.80). 20k: after 1.96x,
+       trained in 1.98x -- a tie. 10k trained in 1.50x (3 seeds).
+       UPDATE 2026-09-23 (graphs/30, src/analysis/exp32_report.py): arm A complete 8/8, arm B
+       (famO20k --anchor_omega) 6/8, arm C (famQ --anchor_omega) not started. On famO's
+       common test: 20k plain 5.73e-4 = 1.44x the baseline, 20k + anchor-after 4.22e-4 =
+       **1.96x**, 20k anchor-trained-in 4.19e-4 = **1.98x (6 seeds)** -- at 20k the two
+       anchor routes TIE (0.7% apart), where at 5k adding it afterwards won 1.31x vs 1.20x.
+       So exp30's "post-hoc beats trained-in" may be an n=5000 effect; wait for 8 seeds and
+       arm C before writing it as a finding. Worst case: 0.0160 baseline -> 0.0098 (20k
+       plain) -> 0.0073 (+ anchor after) -> 0.0085 (trained in).
+       PEEK 2026-09-22, 5 of 8 arm-A seeds (famO20k, plain training), common tests,
+       `Hyperparameter_sweep/exp32_peek_famO20k.json` -- PRELIMINARY, not yet a finding:
+         famO split: famO20k 5.66e-4 = 1.22x famQ (5/5 beat every famQ seed), 1.46x the
+           baseline; + anchor-after 4.21e-4 = **1.97x the baseline**; worst case 0.0094 vs
+           famQ's 0.0167. famQ split: 1.22x famQ, + anchor-after 2.01x the baseline.
+           Neither split is famO20k's own -- the cleanest comparison of the round.
+         val/train gap 4.10 (5k) -> 3.27 (10k) -> 1.97 (20k); train loss flat ~2.3e-8.
+         No seed hit the 1200 cap (571-1112 epochs, 17-18 s/epoch, 2.9-5.3 h).
+         Pre-registration scoring (final when all 8 land): "1.05-1.15x over famQ" WRONG --
+         the doubling paid 1.22x, as much as the previous one; "worst case does not improve"
+         WRONG so far -- it improved ~1.8x on both splits.
+DATASETS DELETED 2026-09-21 (to be run by the user) to fit famO20k in the 30 GB home quota --
+       /work3 does not exist for this account. Each has a recorded seed and its experiment
+       is finished; regenerate with the listed job line (~3 min each). The current generator
+       reproduces the Aug-25 famO bit-exactly on every run without a jump (famO70's pairing
+       check, 2026-09-18), and famN/P/S/T came from the same code:
+         famP_W40            --lhs_seed 23   hpc/job_gen_limiter.sh line "gen famP"
+         famN_W20, famO_W20  --lhs_seed 21/22, "--W 20 40" (regenerate into another --outdir
+                             and keep only the W20 file -- the W40 twins are still here)
+         famS_W40, famT_W40  --lhs_seed 25   hpc/job_gen_limiter.sh lines "gen famS/famT"
+         famO70_W40          --lhs_seed 22 --jump_deg 70   hpc/job_gen_famO70.sh
+       KEPT because no seed is recorded anywhere (irreplaceable): famB, famH-K, famU, famV.
 exp29/30 SUBMITTED 2026-09-18 15:53: data29 = 29444238 (8), anchor30 = 29444235 (12).
        All three arrays wait for the service window; start Mon 21 Sep 09:00.
 exp28  split trunk x gains-on-trunk       DONE   F72, graphs/28. A+B seed 7 is LOST: at 44 h
@@ -3986,7 +4203,16 @@ Until 2026-09-11 `pll_plots.py` had NO CLI: it was hardcoded to `pll_dataset.npz
 **faults OFF**) and `pll_deeponet.pth`, the original prototype. Every regeneration since the
 project moved to n=5000, faults, gains and the limiter has silently redrawn that prototype.
 It now takes `--dataset` / `--ckpt`, and 01-06 as committed are **famO_W40 + L3_w128_g** --
-the deliverable. *(2026-09-21: 03 and 04 redrawn with the famQ s0 + anchor candidate on the
+the deliverable. *(2026-09-26, FINAL: 03, 04 AND 05 show the FLAGSHIP, famO40k seed 6, anchor trained in -- lowest
+own-split record of 8 (F77). Earlier the same day they showed seed 2 at 3 of 8:)* *(2026-09-26: 03, 04 AND 05 now show famO40k seed 2, anchor TRAINED IN -- PROVISIONAL, 3 of 8
+seeds of exp33's arm B, seed 2 lowest own-split record so far (3.563e-4); on famO's 150 val runs 3.58e-4, worst
+0.0057, omega RMS 5.7e-3 vs the original flagship's 7.64e-4 / 0.0105 / 1.68e-2. Re-render if a later seed has a
+lower own-split record.)* *(2026-09-23: 03, 04 AND 05 showed famO20k seed 2, anchor TRAINED IN -- PROVISIONAL, arm B
+had 6 of 8 seeds and seed 2 was picked on its own validation record (4.708e-4). Recurrent
+error at 40 windows ~3.8e-4 against the original flagship's 8.2e-4; compounding 4.1 -> 3.0;
+fig 05 needed `omega0` threaded into its `compute_theta_omega` call, which an anchored model
+refuses to run without. Re-render in one command when the flagship is final. 2026-09-21: 03
+and 04 were the famQ s0 + anchor candidate on the
 same famO val runs, `--anchor_omega --figs 03 04`: the omega staircase is gone, the 40-window
 error falls 8.2e-4 -> 4.9e-4 on those 20 runs, compounding 4.1 -> 3.1. 01, 02, 06 depend on
 the data only; 05 is the training path, which the post-hoc anchor does not touch.)* Three bugs had to be fixed to make a gains model possible at all: the three

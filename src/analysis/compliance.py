@@ -42,6 +42,10 @@ MODELS = {   # name -> (checkpoints, anchor at inference)
     "famO + anchor":            ([f"famO{T.format(n=5000, s=s)}" for s in range(8)], True),
     "famQ":                     ([f"famQ{T.format(n=10000, s=s)}" for s in range(8)], False),
     "candidate (famQ + anchor)": ([f"famQ{T.format(n=10000, s=s)}" for s in range(8)], True),
+    # exp33 arm B, the flagship family (F77); the checkpoints apply the anchor themselves.
+    # Flagship = seed 6 (lowest own-split record), printed on its own row above the medians.
+    "flagship (famO40k, anchor trained in)":
+        ([f"famO40k{T.format(n=40000, s=s).replace('_g.pth', '_ao_g.pth')}" for s in range(8)], False),
 }
 
 

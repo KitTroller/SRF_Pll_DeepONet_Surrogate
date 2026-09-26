@@ -62,6 +62,11 @@ def main():
                         "still DRAWN, so a family generated with this at the SAME "
                         "--lhs_seed is bit-paired with its noisy twin: same ICs, same "
                         "harmonics, same faults, same gains, only the noise term differs")
+    p.add_argument("--slim", action="store_true",
+                   help="drop Vd/Vq/Valpha/Vbeta at save time and set meta['slim']. "
+                        "load_dataset rebuilds them exactly from Va/Vb/Vc and theta_pll "
+                        "(Park/Clarke), so a slim file is a drop-in -- it just costs a few "
+                        "seconds per load. ~45%% smaller: the only way n=40000 fits a 30 GB home.")
     p.add_argument("--jump_deg", type=float, default=None,
                    help="phase-jump half-range in degrees, default the YAML's 60. The angle is "
                         "lo + (hi-lo)*u with u from the seeded LHS, so at the SAME --lhs_seed the "
@@ -77,6 +82,18 @@ def main():
     # running -- and is the kind of thing that gets forgotten and silently poisons the
     # next family. NOTE both modules call OmegaConf.load separately, so they hold
     # DIFFERENT objects and both have to be patched.
+    if a.slim:
+        # Patch the SAVE, not dataset_generator.py: the pipeline file stays untouched and
+        # every other caller keeps writing full files.
+        import dataset_generator as _DG
+        _full_save = _DG.Dataset_Creator.save_dataset
+        def _slim_save(self, records, meta, path="pll_dataset.npz"):
+            drop = ("Vd", "Vq", "Valpha", "Vbeta")
+            kept = {k: v for k, v in records.items() if k not in drop}
+            print(f"slim save: dropping {', '.join(drop)} -- load_dataset rebuilds them")
+            return _full_save(self, kept, {**meta, "slim": True}, path)
+        _DG.Dataset_Creator.save_dataset = _slim_save
+
     gains = a.gains or a.kp_range is not None or a.ki_range is not None
     if (a.n_runs is not None or a.sensors is not None or a.omega_range is not None
             or gains or a.no_faults or a.no_white_noise or a.jump_deg is not None):

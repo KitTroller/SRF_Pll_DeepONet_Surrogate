@@ -45,6 +45,17 @@ condition, so a 0.5 s trajectory is 40 handovers with no ground truth anywhere i
 > inference cost. The anchor works best added at inference, not trained in. That makes
 > famQ + anchor the deliverable **candidate** (1.62× and 1.68× on the two test splits), pending
 > the limiter check and Rahul's co-simulation (`graphs/29`).
+> **F76** (exp32, both common tests, 8 seeds): **20k runs beat 10k by 1.20–1.22×** (8/8), and
+> **20k + the anchor added at inference is ~2× the old deliverable** (1.96× / 2.03×). Adding the
+> anchor at inference is never worse than training it in, and up to 1.12× better (`graphs/30`).
+> **F77** (exp33, 8 seeds, supersedes F76's anchor advice): at **40k runs, training WITH the anchor
+> wins — 2.34× / 2.36× the old deliverable**, 1.09–1.13× better than adding it at inference
+> (p = 0.0003 / 0.04). The trained-in anchor needs data: it loses at 5–10k, ties at 20k, wins at
+> 40k, and its data curve has not bent (20k → 40k 1.18–1.22×), while plain models flatten after
+> 20k. **Flagship: famO40k seed 6, anchor trained in** (`graphs/03–05`). Its limiter
+> certificate (F75 update): 0.041% of samples out of band, at most 0.46 Hz past it.
+> **F78**: on the limited system a fixed-gain model is **60× worse one grid step away** from its
+> tuning, like-for-like (`graphs/31`).
 > Generate a limited family with
 > `--freq_limit 18.8496`; omit it and every path is bit-identical to the unlimited one
 > (verified to 8.2e-13 rad).
@@ -519,7 +530,7 @@ intermediate, so a stale figure is always one command away from being correct. R
 
 | # | figure | command |
 |---|---|---|
-| 01-06 | initial conditions, lock check, prediction vs truth, window sweep, error by window, residual budget. **03 and 04 show the famQ + anchor candidate** on famO's val runs (2026-09-21); 01, 02, 05, 06 the famO flagship | `python src/analysis/pll_plots.py --dataset famO_W40.npz --ckpt runs/famO_W40_n5000_W40_F4_mf503_wp0.3_s0sp0_L3_w128_g.pth`, then for 03/04 `--ckpt runs/famQ_W40_n10000_W40_F4_mf503_wp0.3_s0sp0_L3_w128_g.pth --anchor_omega --figs 03 04` |
+| 01-06 | initial conditions, lock check, prediction vs truth, window sweep, error by window, residual budget. **03, 04, 05 show the flagship, famO40k seed 6 (anchor trained in)** on famO's val runs, 2026-09-26 (F77); 01, 02, 06 depend on the dataset only | `python src/analysis/pll_plots.py --dataset famO_W40.npz --ckpt runs/famO_W40_n5000_W40_F4_mf503_wp0.3_s0sp0_L3_w128_g.pth`, then for 03-05 `--ckpt runs/famO40k_W40_n40000_W40_F4_mf503_wp0.3_s6sp0_L3_w128_ao_g.pth --figs 03 04 05` (an anchor-trained checkpoint applies the anchor itself) |
 | 10 | Fourier arms of a sweep directory (`F=0` / `mf503` / `mf628`, every seed a dot) | `python src/analysis/plot_sweeps.py sweeps_famB_ff --kind arms` |
 | 11 | the `W` sweep | `python src/analysis/plot_sweeps.py sweeps_famB_W --kind W` |
 | 14 | the `w_phys` sweep | `python src/analysis/plot_sweeps.py sweeps_famB_wphys --kind wphys` |
@@ -538,7 +549,9 @@ intermediate, so a stale figure is always one command away from being correct. R
 | 26 | depth × interior width, on a limited and an unlimited family (**branch `Siemens_Request`**) | `python src/analysis/capacity_grid.py` |
 | 26b | the same grid scored on **worst case** rather than RMS — depth's gain largely vanishes, width's does not | `python src/analysis/capacity_grid.py --metric rollout_full_max --out 26b_capacity_worstcase.png` |
 | 27 | white noise on/off × limiter × gains, every model scored on **both** truths (**branch `Siemens_Request`**) | `python src/analysis/noise_report.py` |
-| 29 | exp29–31 on one common test: data, the ω anchor (trained vs added after), wider jumps; plus a phase-jump sweep 20–75° (**branch `Architecture_Change`**) | `python src/analysis/round29_31.py` (`--plot_only` redraws from the saved JSON) |
+| 31 | **gain sensitivity on LIMITED physics** (F78): tunable 5k, tunable flagship, fixed-gain famN over the (Kp, Ki) box, ω0 ±2. Replaces `Tunable_Kp_Ki_tests/03` (unlimited, L2_w64) for anything about the limited system (**branch `Architecture_Change`**) | `python src/analysis/gain_sensitivity.py <tunable ckpts> --fixed <famN ckpt> --n_runs 12 --out 31_gain_sensitivity_limited.png` (numbers saved to `Hyperparameter_sweep/31_gain_sensitivity_limited.npz`) |
+| 30 | **data × anchor** (exp32–33): 5k/10k/20k/40k × plain / anchor after / anchor trained in, on BOTH common tests (**branch `Architecture_Change`**) | `python src/analysis/exp32_report.py` (`--plot_only` redraws) |
+| 29 | exp29–31 on one common test (left panel superseded by 30; the jump sweep stands): data, the ω anchor (trained vs added after), wider jumps; plus a phase-jump sweep 20–75° (**branch `Architecture_Change`**) | `python src/analysis/round29_31.py` (`--plot_only` redraws from the saved JSON) |
 | 28 | split trunk × gains placement on the deliverable, one dot per seed, on RMS, peak and training loss (**branch `Architecture_Change`**) | `python src/analysis/arch_report.py` |
 | Tunable_Kp_Ki_tests/01-02 | model menu; theta and omega split | `python src/analysis/model_menu.py` |
 | Tunable_Kp_Ki_tests/03 | error across the whole `(Kp, Ki)` box, gains vs fixed | `python src/analysis/gain_sensitivity.py runs/<gains tag>.pth` |

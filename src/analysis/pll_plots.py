@@ -256,15 +256,19 @@ def fig_error_by_window(data, prep, meta, model, ck, tr, va):
     branch = build_branch(prep, ck["mu"], ck["sd"],
                           ck.get("gstat") if getattr(model, "n_extra", 0) else None)
     def stats(mask):
-        tens = tuple(t[mask] for t in (branch, prep["Vq"], prep["target_theta"], prep["target_omega"]))
+        # omega0 rides along for anchored models: compute_theta_omega REFUSES one without it
+        # (it needs the value omega(0) is pinned to). None for every other model, as before.
+        tens = tuple(t[mask] for t in (branch, prep["Vq"], prep["target_theta"],
+                                       prep["target_omega"], prep["omega0"]))
         n = int(mask.sum()); TH, OM, TT, TO = [], [], [], []
-        for br, Vq, tth, tom in batches(tens, n, 256, False, "cpu", False):
+        for br, Vq, tth, tom, om0 in batches(tens, n, 256, False, "cpu", False):
             B = br.shape[0]
             tq = prep["t_local"].view(1,-1,1).expand(B,-1,1).clone().requires_grad_(True)
             # Kp/Ki are deliberately not passed: with output_dim=2 theta and omega are
             # direct network outputs, and only the RESIDUAL terms use the gains -- which
             # this figure discards. Do not read o["r1"]/o["r2"] here without passing them.
-            o = compute_theta_omega(model, tq, br, Vq.unsqueeze(-1), omega_nominal=0.0)
+            o = compute_theta_omega(model, tq, br, Vq.unsqueeze(-1), omega_nominal=0.0,
+                                    omega0=om0 if getattr(model, "anchor_omega", False) else None)
             TH.append(o["theta"].detach()); OM.append(o["omega"].detach())
             TT.append(tth.unsqueeze(-1)); TO.append(tom.unsqueeze(-1))
         th, om, tt, to = map(torch.cat, (TH, OM, TT, TO))
@@ -346,8 +350,13 @@ if __name__ == "__main__":
                    help="anchor omega at every handover (F73/F74) in figures 03 and 04")
     p.add_argument("--figs", nargs="+", default=["01", "02", "03", "04", "05", "06"],
                    help="which figures to draw. 01, 02, 06 depend on the dataset only")
+    p.add_argument("--outdir", default=None,
+                   help="write the PNGs here instead of graphs/. For before/after sets: render "
+                        "each model into its own folder, then compare the same filenames")
     a = p.parse_args()
     ANCHOR = a.anchor_omega
+    if a.outdir:
+        GRAPHS = _Path(a.outdir); GRAPHS.mkdir(parents=True, exist_ok=True)
 
     data, meta, prep, model, ck, tr, va = load_all(a.dataset, a.ckpt, a.split_seed)
     val_runs = sorted(set(prep["run_id"][va].tolist()))
