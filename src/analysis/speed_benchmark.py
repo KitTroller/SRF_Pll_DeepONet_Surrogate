@@ -215,9 +215,10 @@ def solve_at(case, dt, timeit=False):
     return run()[0], None
 
 
-def deeponet_at(case, model, ck, W, S, dt, lean=True, timeit=False):
+def deeponet_at(case, model, ck, W, S, dt, lean=True, timeit=False, kp=None, ki=None):
     """W recurrent windows over the same horizon, on the same subsampled waveform.
-    Uses pll_infer.predict_window unchanged, so this is the deployed path."""
+    Uses pll_infer.predict_window unchanged, so this is the deployed path.
+    kp/ki: required by a tunable-gain (_g) checkpoint, ignored by a fixed-gain one."""
     from pll_infer import predict_window
     torch.set_default_dtype(torch.float32)
     k = int(round(dt / case["dt_fine"]))
@@ -237,7 +238,7 @@ def deeponet_at(case, model, ck, W, S, dt, lean=True, timeit=False):
             for w in range(W):
                 sl = slice(w * S, (w + 1) * S)
                 th, om = predict_window(model, ck, th0, om0,
-                                        Va[r, sl], Vb[r, sl], Vc[r, sl], t_ext)
+                                        Va[r, sl], Vb[r, sl], Vc[r, sl], t_ext, kp, ki)
                 per_run.append(th[:-1])
                 th0, om0 = th[-1], om[-1]          # the handover
             out.append(torch.cat(per_run))

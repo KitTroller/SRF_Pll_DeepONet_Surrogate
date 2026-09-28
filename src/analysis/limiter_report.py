@@ -89,12 +89,14 @@ GROUPS = ("no limiter", "limiter,\nruns that\nNEVER saturate",
 GCOL = ("tab:blue", "tab:green", "tab:orange", "tab:red")
 
 
-def one_pair(limited, unlimited):
-    """The four groups for ONE draw. Returns [(label, values)] plus the saturated fraction."""
+def one_pair(limited, unlimited, arch=""):
+    """The four groups for ONE draw. Returns [(label, values)] plus the saturated fraction.
+    arch="" is the default L2_w64 checkpoints (F65); e.g. "_L3_w128" picks that size."""
     runs = {}
     for fam, limit in ((unlimited, None), (limited, LIMIT)):
         Va, Vb, Vc, th_t, om_t, u = truth(limit)
-        paths = sorted(q for q in glob.glob(f"runs/{fam}_*sp0.pth") if "_L" not in q)
+        paths = (sorted(glob.glob(f"runs/{fam}_*sp0{arch}.pth")) if arch else
+                 sorted(q for q in glob.glob(f"runs/{fam}_*sp0.pth") if "_L" not in q))
         if not paths:
             raise SystemExit(f"no plain checkpoints for {fam}")
         acc = []
@@ -125,13 +127,15 @@ def main():
                    help="limited,unlimited per draw. The two draws are plotted SIDE BY "
                         "SIDE and never pooled -- pooling would hide the replication, "
                         "which is the whole result.")
+    p.add_argument("--arch", default="", help='checkpoint size suffix, e.g. "_L3_w128"; '
+                   'default = the L2_w64 checkpoints F65 was measured on')
     a = p.parse_args()
 
     draws = []
     for i, pr in enumerate(a.pairs):
         lim, unl = pr.split(",")
         print(f"draw {i+1}: {lim} vs {unl}")
-        vals, satfrac, first = one_pair(lim, unl)
+        vals, satfrac, first = one_pair(lim, unl, a.arch)
         draws.append((f"draw {i+1}\n{lim.split('_')[0]}/{unl.split('_')[0]}", vals, satfrac, first))
 
     print(f"\n{'group':34s}" + "".join(f"{d[0].splitlines()[0]:>22s}" for d in draws))
@@ -175,10 +179,13 @@ def main():
 
     fr = sorted({f"{100*d[2]:.1f}%" for d in draws})       # both draws agree -> print once
     sat = fr[0] if len(fr) == 1 else " and ".join(fr)
-    fig.suptitle("The limiter costs ~2.1x EVERYWHERE and ~22x where it fires — "
-                 f"and it replicates across two independent LHS draws.\n"
-                 f"Only {sat} of windows saturate, so a pooled metric shows none of it.",
-                 fontsize=12)
+    # measured, not hardcoded: the old fixed "~2.1x / ~22x" title was the L2_w64 result and
+    # was wrong on any other --arch
+    r = [np.median(v) / np.median(vals[0]) for v in draws[0][1]]
+    fig.suptitle(f"{a.arch.strip('_') or 'L2_w64'} checkpoints: the limiter costs {r[1]:.2f}x on runs that "
+                 f"never saturate, {r[2]:.2f}x on clean windows of runs that do, {r[3]:.2f}x in "
+                 f"saturated windows (draw 1).\nOnly {sat} of windows saturate, so a pooled "
+                 f"metric shows none of it.", fontsize=12)
     fig.tight_layout()
     out = _graphs(a.out); fig.savefig(out, dpi=140)
     print(f"\n-> {out}")

@@ -41,9 +41,12 @@ from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 import argparse
 
+import json
+
 import numpy as np
 import torch
 
+import PLL_Simulator as PS
 from paths import ROOT
 from speed_benchmark import solve_at, deeponet_at
 from train_pll import load_checkpoint
@@ -164,7 +167,7 @@ def figure(groups, order, n_runs, out="15_ood_ladder.png"):
     ax.legend(hh, lab, fontsize=7.5, loc="lower right")
     ax.set_title("Out-of-distribution ladder — how far past the training box does it hold?\n"
                  f"{n_runs} runs x 0.5 s. Lower is better; the light bar is the "
-                 f"discretisation floor at that family's own timestep.", fontsize=10)
+                 f"solver's own error at that family's timestep (mostly sampled sensor noise, F49).", fontsize=10)
     fig.tight_layout()
     GRAPHS.mkdir(exist_ok=True)
     fig.savefig(GRAPHS / out, dpi=160)
@@ -192,11 +195,24 @@ def main():
 
     # Checkpoints from DIFFERENT families (different dt/W) may be mixed on one command
     # line: group them, and give each group its own solver floor and its own decimation.
+    # The family name is part of the key, so two families at the same dt/W (e.g. famO and
+    # famO40k) get their own bars rather than the second being silently dropped.
     fams = {}
     for c in a.ckpt:
         m = Dataset_Creator.load_dataset(a.dataset)[1] if a.dataset else meta_of(c)
-        key = f"{m['S']*m['W']} sensors, dt={m['dt']*1e6:.0f} us, W={m['W']}"
+        key = f"{m['S']*m['W']} sensors, dt={m['dt']*1e6:.0f} us, W={m['W']}, {_Path(c).stem.split('_W')[0]}"
         fams.setdefault(key, {"meta": m, "ckpts": []})["ckpts"].append(c)
+
+    # The truth must be the physics the models were trained on: every solve below builds a
+    # PLLSimulator from PLL_Simulator's module constants, whose freq_limit is null, so a
+    # LIMITED model would otherwise be scored against UNLIMITED truth.
+    limits = {f["meta"].get("freq_limit") for f in fams.values()}
+    if len(limits) > 1:
+        raise SystemExit(f"these checkpoints were trained on different physics (freq_limit {limits})")
+    PS.pll_constants.freq_limit = limits.pop()
+    # a tunable-gain model is fed the gains the truth is simulated with (the YAML's 25/300)
+    KPKI = (float(PS.pll_constants.Pll.Kp), float(PS.pll_constants.Pll.Ki))
+    print(f"truth: freq_limit = {PS.pll_constants.freq_limit}, Kp/Ki = {KPKI}")
 
     torch.set_default_dtype(torch.float64)
     torch.manual_seed(a.seed)
@@ -209,7 +225,7 @@ def main():
     print()
     hdr = f"  {'scenario':30s}"
     for k in fams:
-        hdr += f" {'ours [' + k.split(',')[1].strip() + ']':>20s} {'floor':>10s}"
+        hdr += f" {'ours [' + k.split(',')[-1].strip() + ']':>20s} {'floor':>10s} {'vs solver':>10s}"
     print(hdr + f" {'turns':>7s}")
 
     groups = {k: {} for k in fams}
@@ -234,13 +250,18 @@ def main():
             th_sv, _ = solve_at(case, dt_c)
             e_sv = float((th_sv[:, :W * S] - ref).pow(2).mean().sqrt())
 
-            e_nns, turns, e_wrapped = [], 0, 0.0
+            e_nns, e_vs, turns, e_wrapped = [], [], 0, 0.0
             for c in fam["ckpts"]:
                 torch.set_default_dtype(torch.float32)
                 model, ck = load_checkpoint(ROOT / c if not c.startswith("/") else c)
-                th_nn, _ = deeponet_at(case, model, ck, W, S, dt_c)
+                th_nn, _ = deeponet_at(case, model, ck, W, S, dt_c, kp=KPKI[0], ki=KPKI[1])
                 torch.set_default_dtype(torch.float64)
                 err = th_nn.double() - ref
+                # against the solver at the network's OWN step -- the target it was trained
+                # to imitate. The fine reference adds a ~9e-4 floor (the sensor noise sampled
+                # at 100 us vs 12.5 us, F49) that every 100 us method shares and that swamps
+                # the difference between two networks; this metric has no such floor.
+                e_vs.append(float((th_nn.double() - th_sv[:, :W * S]).pow(2).mean().sqrt()))
                 e_nns.append(float(err.pow(2).mean().sqrt()))
                 if c == fam["ckpts"][0]:
                     # wrapped error: what survives forgiving whole-turn disagreements.
@@ -252,10 +273,13 @@ def main():
                     turns = int(((err[:, -1] / (2 * np.pi)).round() != 0).sum())
             groups[key][name] = dict(ours_abs=e_nns[0], solver_abs=e_sv,
                                      wrapped_abs=e_wrapped, turns=turns,
-                                     all_seeds=e_nns)
-            row += f" {e_nns[0]:20.3e} {e_sv:10.3e}"
+                                     all_seeds=e_nns, ours_vs_solver=e_vs[0])
+            row += f" {e_nns[0]:20.3e} {e_sv:10.3e} {e_vs[0]:10.3e}"
         print(row + f" {turns:6d}/{a.n_runs}", flush=True)
 
+    json.dump({"groups": groups, "order": order, "n_runs": a.n_runs, "ckpts": a.ckpt,
+               "freq_limit": PS.pll_constants.freq_limit},
+              open(ROOT / "Hyperparameter_sweep" / (_Path(a.out).stem + ".json"), "w"), indent=1)
     figure(groups, order, a.n_runs, a.out)
 
     print("\nturns off  = runs whose FINAL error is a whole multiple of 2*pi away, i.e. the")

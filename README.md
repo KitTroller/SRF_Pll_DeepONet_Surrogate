@@ -56,6 +56,12 @@ condition, so a 0.5 s trajectory is 40 handovers with no ground truth anywhere i
 > certificate (F75 update): 0.041% of samples out of band, at most 0.46 Hz past it.
 > **F78**: on the limited system a fixed-gain model is **60× worse one grid step away** from its
 > tuning, like-for-like (`graphs/31`).
+> **F79**: at the deliverable's size (L3_w128) the limiter costs **1.33×** on runs that never
+> saturate and **3.25×** in saturated windows, down from 2.1× / 22× at the small default
+> network (`graphs/24b`). **F80**: on the limited system the flagship is **109× faster** than
+> the limited trapezoid solver at batch 1 with 4.5% more error; out of distribution it holds
+> for grid excursions and longer sags, degrades 5–13× on deeper sags and bigger jumps, and
+> fails past ±40 rad/s initial frequency error (`graphs/32`).
 > Generate a limited family with
 > `--freq_limit 18.8496`; omit it and every path is bit-identical to the unlimited one
 > (verified to 8.2e-13 rad).
@@ -549,6 +555,7 @@ intermediate, so a stale figure is always one command away from being correct. R
 | 26 | depth × interior width, on a limited and an unlimited family (**branch `Siemens_Request`**) | `python src/analysis/capacity_grid.py` |
 | 26b | the same grid scored on **worst case** rather than RMS — depth's gain largely vanishes, width's does not | `python src/analysis/capacity_grid.py --metric rollout_full_max --out 26b_capacity_worstcase.png` |
 | 27 | white noise on/off × limiter × gains, every model scored on **both** truths (**branch `Siemens_Request`**) | `python src/analysis/noise_report.py` |
+| paper/ | **the PES GM 2027 paper's data figures**, IEEE single-column width, Times, vector PDF + 600 dpi PNG: fig2 accuracy vs compute (graphs/12's values, unlimited), fig3 Ω error original vs flagship on one y-scale (10 famO val runs), fig4 gain sensitivity (graphs/31's npz, limited) (**branch `Architecture_Change`**) | `python src/analysis/paper_figures.py` |
 | 31 | **gain sensitivity on LIMITED physics** (F78): tunable 5k, tunable flagship, fixed-gain famN over the (Kp, Ki) box, ω0 ±2. Replaces `Tunable_Kp_Ki_tests/03` (unlimited, L2_w64) for anything about the limited system (**branch `Architecture_Change`**) | `python src/analysis/gain_sensitivity.py <tunable ckpts> --fixed <famN ckpt> --n_runs 12 --out 31_gain_sensitivity_limited.png` (numbers saved to `Hyperparameter_sweep/31_gain_sensitivity_limited.npz`) |
 | 30 | **data × anchor** (exp32–33): 5k/10k/20k/40k × plain / anchor after / anchor trained in, on BOTH common tests (**branch `Architecture_Change`**) | `python src/analysis/exp32_report.py` (`--plot_only` redraws) |
 | 29 | exp29–31 on one common test (left panel superseded by 30; the jump sweep stands): data, the ω anchor (trained vs added after), wider jumps; plus a phase-jump sweep 20–75° (**branch `Architecture_Change`**) | `python src/analysis/round29_31.py` (`--plot_only` redraws from the saved JSON) |

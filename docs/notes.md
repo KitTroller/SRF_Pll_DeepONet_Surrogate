@@ -1,7 +1,6 @@
 # PLL DeepONet — open decisions and deferred changes
 
 Running log of choices made, choices deferred, and the numbers that catch regressions.
-Companion to `PLL_DeepONet_BUILD_GUIDE.html`.
 
 ---
 
@@ -1619,6 +1618,87 @@ error did not move.** Holding S=125 fixed (to keep the architecture identical) f
 from 40 to 80, so the 0.5 s rollout now performs **twice as many handovers**. Compounding
 roughly doubles and cancels the per-window gain exactly. You cannot hold both the
 architecture and the handover count fixed while halving dt; exp6 chose architecture.
+
+### F81 — **TUNABLE GAINS COST 1.5x AT THE OPERATING POINT, like-for-like, on the limited system; the flagship beats the fixed model anyway.** `src/analysis/gains_cost.py`. 2026-09-28.
+
+famN (FIXED 25/300, 4 seeds) vs famO (TUNABLE fed 25/300, 8 seeds), both L3_w128, n=5000,
+no anchor, the SAME limited truth at Kp=25 Ki=300, omega0 +/-20 (full envelope), 32 runs per
+kind, common_test.truth's fixed sag (0.70 pu, 60 ms) and 40 deg jump. Medians:
+
+| kind | FIXED | TUNABLE | cost | flagship famO40k s6 | flagship / fixed |
+|---|---|---|---|---|---|
+| clean | 3.70e-4 | 5.97e-4 | **1.61x** | 2.37e-4 | 0.64x |
+| sag | 4.44e-4 | 6.56e-4 | **1.48x** | 2.74e-4 | 0.62x |
+| jump | 4.87e-4 | 7.12e-4 | **1.46x** | 3.42e-4 | 0.70x |
+
+Consistent with F78's warm-regime 1.42x. **For the paper: tunability costs ~1.5x at the
+operating point, like-for-like** -- NOT F57's 3.5x (unlimited, L2_w64, box-averaged) and
+not the "3.23x" in the draft, which has no source. The flagship (40k + anchor) is 1.4-1.6x
+MORE accurate than the fixed-gain model at the fixed model's own tuning. Caveat: the fixed
+arm's seed spread is wide (3.2e-4 to 8.4e-4 on clean), 4 seeds.
+
+### F80 — **ON THE LIMITED SYSTEM THE FLAGSHIP IS 109x FASTER THAN ITS SOLVER, and it extrapolates like the old model, only 1.3-6x better.** `graphs/32`, `src/analysis/limited_speed.py`. 2026-09-28.
+
+**Speed** (`limited_speed.py`, M1 Max CPU, 8 torch threads, batch 1, per trajectory, median
+of 5 after a warm-up, all in one process, nothing else running):
+
+| | ms per simulated second | flagship is |
+|---|---|---|
+| trapezoid, UNLIMITED | 1046.5 | 37.9x faster |
+| trapezoid, LIMITED (coupled theta/omega Newton) | 2997.0 | **108.6x faster** |
+| flagship DeepONet (famO40k s6) | 27.6 | -- |
+
+The limited solver costs 2.86x the unlimited one; the network's cost does not depend on the
+physics. 37.9x re-measures graphs/12's 41x (1109 vs 27 ms) on the same machine -- same
+ballpark, different session. Accuracy at that speed, from the OOD control row below (32 runs,
+omega0 +/-20, no faults, vs a 12.5 us LIMITED reference): flagship 9.58e-4 vs the 100 us
+limited solver's 9.16e-4, i.e. **4.5% more error at 109x less compute** -- the limited
+analogue of graphs/12's "1.4% more error at 41x".
+
+**Extrapolation** (`ood_test.py`, now on LIMITED truth with Kp/Ki = 25/300 fed to the
+gains models, 32 paired runs; `graphs/32`, numbers in `Hyperparameter_sweep/32_ood_ladder_limited.json`).
+NEW column "vs solver" = RMS against the 100 us solver, i.e. the network's own training
+target. The 12.5 us reference adds a ~9.2e-4 noise floor (F49) that every 100 us method
+shares and that compresses the in-distribution difference between the two models to 1.05x;
+against the solver it is 2.0x, in line with the common tests.
+
+| scenario | flagship vs solver | x its control / trained-fault | old famO s0 vs solver | flagship better by |
+|---|---|---|---|---|
+| in-distribution (control) | 2.62e-4 | 1.00 | 5.28e-4 | 2.0x |
+| grid freq x5 (+/-1 Hz) | 3.69e-4 | 1.41 | 7.06e-4 | 1.9x |
+| amplitude x3 (+/-0.15 pu) | 4.33e-4 | 1.65 | 6.56e-4 | 1.5x |
+| sag LONG (0.1-0.3 s) | 3.96e-4 | 1.26 vs trained sags | 7.35e-4 | 1.9x |
+| sag DEEP (0.1-0.5 pu) | 1.59e-3 | 5.1 vs trained sags | 2.45e-3 | 1.5x |
+| jump BIG (+/-120 deg) | 6.40e-3 | 12.7 vs trained jumps | 8.47e-3 | 1.3x |
+| omega0 x2 (+/-40 rad/s) | 5.86e-3 | 22 | 3.65e-2 | **6.2x** |
+| omega0 x4 (+/-80 rad/s) | 0.79 (cycle slips) | fails | 1.35 | -- |
+| sag trained / jump trained | 3.14e-4 / 5.05e-4 | -- | 6.44e-4 / 1.21e-3 | 2.1x / 2.4x |
+
+Same shape as the unlimited famD ladder (F42): grid excursions and longer sags are nearly
+free, deeper sags and bigger jumps cost 5-13x but stay below 0.4 deg, and the initial
+frequency error is the one hard edge (beyond +/-40 rad/s; F43: the PLL loop itself
+cycle-slips there). Better data + the anchor lifted every row but changed no edge.
+
+### F79 — **AT L3_w128 THE LIMITER IS MUCH CHEAPER: 1.33x / 2.12x / 3.25x, against F65's 2.12x / 4.05x / 22.2x at L2_w64.** `graphs/24b`. 2026-09-28.
+
+`limiter_report.py --pairs famN_W40,famR_W40 --arch _L3_w128` -- F65's exact protocol (same
+truth: 12 runs, seed 0, paired limited/unlimited ICs; windows flagged by whether the TRUTH
+saturated), on the 4 L3_w128 seeds of famN and famR that exp17/exp18 left on disk. Draw 1
+only: famS/famT have no L3_w128 checkpoints, so this one is NOT replicated.
+
+| group (median per-window theta RMS, x the no-limiter model) | L2_w64 (F65) | **L3_w128** |
+|---|---|---|
+| no limiter (famR) | 1.00x | 1.00x (1.198e-4) |
+| limiter, runs that NEVER saturate | 2.12x | **1.33x** |
+| limiter, clean windows of runs that DO | 4.05x | **2.12x** |
+| limiter, SATURATED windows | 22.20x | **3.25x** |
+
+**The kink was mostly a capacity problem.** The saturated-window cost falls 6.8x, the
+everywhere-cost from 2.12x to 1.33x -- exactly F66's "depth is limiter-specific" seen from
+the other side. Both families are FIXED-gain and plain (no anchor, 5k): there is no
+unlimited counterpart of the tunable 40k flagship, so this is the best available answer to
+"what does the limiter cost at the deliverable's size". For the paper: quote 1.33x / 2.12x /
+3.25x at L3_w128, and F65's 2.1x / 22x only as "at the smaller default network".
 
 ### F78 — **GAIN SENSITIVITY, REDONE ON THE LIMITED SYSTEM: a fixed-gain model is 60x worse one step away.** `graphs/31`. 2026-09-26.
 
