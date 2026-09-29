@@ -154,7 +154,72 @@ def fig4():
     save(fig, "fig4_gain_sensitivity")
 
 
+def fig5(n_test=150):
+    """OPTIONAL example trajectory. The run is chosen by a fixed rule, not by eye: among
+    famO's first 150 validation runs (the common test set), the LARGEST phase jump after
+    which the TRUE PLL enters the +/-3 Hz limit. Its error rank among all 150 is printed,
+    so the caption can say how typical it is."""
+    data, meta = Dataset_Creator.load_dataset("famO_W40.npz")
+    torch.set_default_dtype(torch.float32)
+    prep, W, S, dt, L = prepare(data), meta["W"], meta["S"], meta["dt"], meta["freq_limit"]
+    _, va = group_split(prep["run_id"], 0.15, 0)
+    runs = sorted(set(prep["run_id"][va].tolist()))[:n_test]
+    z = np.load(ROOT / "data" / "famO_W40.npz")
+    kind, dist = z["fault_kind"][::W], z["disturbance"]
+    t = np.arange(W * S) * dt
+    cat = lambda key, r: torch.cat([prep[key][r * W + k] for k in range(W)]).numpy()
+
+    def saturates_after_jump(r):
+        u = cat("target_omega", r) + float(prep["kp"][r * W]) * cat("Vq", r)
+        return np.any(np.abs(u[t >= dist[r, 3]]) > L)
+    cand = [r for r in runs if kind[r] == 2 and saturates_after_jump(r)]
+    r = max(cand, key=lambda q: abs(dist[q, 4]))
+    t0, ang = dist[r, 3], np.degrees(dist[r, 4])
+    kp, ki = float(prep["kp"][r * W]), float(prep["ki"][r * W])
+
+    model, ck = load_f32(ROOT / FLAG)
+    with torch.no_grad():
+        rms = {q: float((rollout(model, ck, prep, q, W, W)[0] - truth(prep, q, W, W)[0]).pow(2).mean().sqrt())
+               for q in runs}
+        th_p = rollout(model, ck, prep, r, W, W)[0].double().numpy()
+    th_t = truth(prep, r, W, W)[0].double().numpy()
+    rank = sorted(rms.values()).index(rms[r]) + 1
+    print(f"  run {r}: {ang:+.1f} deg jump at {t0:.3f} s, Kp {kp:.1f} Ki {ki:.0f}; "
+          f"theta RMS {rms[r]:.2e} = rank {rank}/{len(runs)} (median {np.median(list(rms.values())):.2e})")
+
+    wn = 2 * np.pi * 50
+    dev = lambda th: th - th[0] - wn * t                      # angle minus the nominal ramp
+    f = lambda th: (np.gradient(th, dt) - wn) / (2 * np.pi)   # PLL frequency deviation [Hz]
+    fig, axs = plt.subplots(3, 1, figsize=(COL_W, 3.1), sharex=True,
+                            gridspec_kw={"height_ratios": [1, 1, 0.75], "hspace": 0.18})
+    # short labels; the caption defines them: dtheta = theta - theta0 - w_n t, df = PLL freq - 50 Hz
+    for ax, (yt, yp, lab) in zip(axs[:2], [(dev(th_t), dev(th_p), r"$\Delta\theta$ [rad]"),
+                                         (f(th_t), f(th_p), r"$\Delta f$ [Hz]")]):
+        ax.plot(t, yt, color=INK, lw=1.0, label="Trapezoidal solver")
+        ax.plot(t, yp, color=BLUE, lw=1.0, ls=(0, (3, 1.5)), label="DeepONet (final)")
+        ax.set_ylabel(lab)
+    for lim in (-3, 3):
+        axs[1].axhline(lim, color=INK2, lw=0.6, ls=(0, (1, 1.5)))
+    axs[1].annotate("±3 Hz limit", (0.495, 3), xytext=(0, 2), textcoords="offset points",
+                    ha="right", va="bottom", fontsize=6.5, color=INK2)
+    axs[2].plot(t, 1e3 * (th_p - th_t), color=BLUE, lw=0.8)
+    axs[2].axhline(0, color=INK, lw=0.5)
+    axs[2].set_ylabel(r"$\theta$ error [mrad]")
+    axs[2].set_xlabel("Time [s]")
+    for ax in axs:
+        ax.axvline(t0, color=ORANGE, lw=0.8, alpha=0.8)
+        style(ax)
+    axs[0].annotate(f"{ang:+.0f}° phase jump", (t0, 1), xycoords=("data", "axes fraction"),
+                    xytext=(3, -2), textcoords="offset points", ha="left", va="top",
+                    fontsize=6.5, color=ORANGE)
+    axs[0].legend(loc="upper right", frameon=False, handlelength=2.2)
+    axs[2].set_xlim(0, t[-1])
+    fig.align_ylabels(axs)
+    save(fig, "fig5_example_trajectory")
+
+
 if __name__ == "__main__":
-    fig2()
-    fig4()
-    fig3()
+    # python src/analysis/paper_figures.py [2 3 4 5] -- default: the three in the paper
+    want = _sys.argv[1:] or ["2", "3", "4"]
+    for k in want:
+        {"2": fig2, "3": fig3, "4": fig4, "5": fig5}[k]()
