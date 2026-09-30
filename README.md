@@ -56,6 +56,10 @@ condition, so a 0.5 s trajectory is 40 handovers with no ground truth anywhere i
 > certificate (F75 update): 0.041% of samples out of band, at most 0.46 Hz past it.
 > **F78**: on the limited system a fixed-gain model is **60× worse one grid step away** from its
 > tuning, like-for-like (`graphs/31`).
+> **F82 (supersedes the 41x / 109x / 2.2x speed claims below)**: those compared against an interpreted
+> Python-loop solver. Compiled against compiled, batch 1: the network ties the unlimited solver at 100 us,
+> is ~3.4x faster than the limited one, ~9x cheaper than the one-step NN of [1] at equal accuracy, and
+> the gap grows as the simulator step shrinks (~22x vs the limited solver at 2 us). `src/analysis/compiled_speed/`.
 > **F79**: at the deliverable's size (L3_w128) the limiter costs **1.33×** on runs that never
 > saturate and **3.25×** in saturated windows, down from 2.1× / 22× at the small default
 > network (`graphs/24b`). **F80**: on the limited system the flagship is **109× faster** than

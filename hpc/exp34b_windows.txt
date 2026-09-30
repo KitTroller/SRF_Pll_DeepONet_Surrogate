@@ -1,0 +1,31 @@
+# exp34, the two window arms: W=20 (S=250, 25 ms) and W=50 (S=100, 10 ms). 16 GPU jobs.
+# Design, verdict rule, predictions and the full command list: hpc/exp34a_resweep.txt.
+#
+#     bsub < hpc/job_gen_exp34.sh                   (both files, one solve, ~30 min)
+#     grep CHECK logs/gen_<jobid>.out
+#     sh hpc/submit.sh hpc/exp34b_windows.txt r34b hpc/job_sweep_gpu_long.sh
+#
+# The comb stays at the flagship's F4 mf503 on purpose: one knob per arm. The lowest feature
+# (126 rad/s) completes 0.5 cycles per 25 ms window and 0.2 per 10 ms window, against 0.25
+# at W=40; F56 found the right lowest feature roughly constant in absolute terms across
+# W=20/40/100 (126-188 rad/s).
+# The branch reads 3 x S samples: W=20 has 188,864 parameters, W=50 131,264 (W=40: 140,864).
+
+# --- W=20 ---
+--dataset famO40k_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 0 --anchor_omega
+--dataset famO40k_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 1 --anchor_omega
+--dataset famO40k_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 2 --anchor_omega
+--dataset famO40k_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 3 --anchor_omega
+--dataset famO40k_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 4 --anchor_omega
+--dataset famO40k_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 5 --anchor_omega
+--dataset famO40k_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 6 --anchor_omega
+--dataset famO40k_W20.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 7 --anchor_omega
+# --- W=50 ---
+--dataset famO40k_W50.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 0 --anchor_omega
+--dataset famO40k_W50.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 1 --anchor_omega
+--dataset famO40k_W50.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 2 --anchor_omega
+--dataset famO40k_W50.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 3 --anchor_omega
+--dataset famO40k_W50.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 4 --anchor_omega
+--dataset famO40k_W50.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 5 --anchor_omega
+--dataset famO40k_W50.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 6 --anchor_omega
+--dataset famO40k_W50.npz --F 4 --max_freq 503 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 7 --anchor_omega

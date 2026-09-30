@@ -1619,6 +1619,76 @@ from 40 to 80, so the 0.5 s rollout now performs **twice as many handovers**. Co
 roughly doubles and cancels the per-window gain exactly. You cannot hold both the
 architecture and the handover count fixed while halving dt; exp6 chose architecture.
 
+### F82 — **THE 41x / 109x WERE AGAINST AN INTERPRETED SOLVER. Compiled against compiled, the network is ~3x faster at 100 us, and the gap grows as the step shrinks.** `src/analysis/compiled_speed/`. 2026-09-29.
+
+Raised by an external review session: the reference solver is a Python `for` loop over
+PyTorch ops at batch 1, so its cost is mostly interpreter overhead, and the network does far
+MORE arithmetic per simulated second. Checked on the M1 Max, batch 1, per trajectory,
+median of 30, one process:
+
+| implementation | ms per simulated second |
+|---|---|
+| trapezoid, limited, PyTorch loop (the old baseline, F80) | 2997 |
+| network, deployed `predict_window` (PyTorch, trunk recomputed every call) | 27.6 |
+| **trapezoid, limited, compiled (Numba), 100 us** | **4.05** (matches ours to 1e-14 rad, ~3 Newton iterations per step) |
+| **network, lean (trunk evaluated once), NumPy** | **2.11** |
+| **network, lean, Numba** | **1.37** (matches the deployed rollout to 3e-5 rad, a float32 vs float64 difference) |
+
+Compiled solver against its step: 3.7 / 7.1 / 14.3 / 33.8 / 59.2 / 135.4 ms per simulated
+second at 100 / 50 / 25 / 10 / 5 / 2 us. The network's cost does not depend on the step (80
+calls per simulated second; the trunk is continuous in t).
+
+1. **The old headline speedups measured interpreter overhead, not the method.** Against a
+   compiled solver the DEPLOYED network is ~7x SLOWER (27.6 vs 4.05). The fair comparison,
+   compiled against compiled, is **~3x faster at 100 us** (4.05 / 1.37), rising to **~25x at 10 us
+   and ~100x at 2 us**, the steps EMT tools use when switching converters are modelled. That
+   scaling is the defensible, structural claim.
+2. **The deployed inference was wasteful:** the trunk depends only on t, so it can be cached.
+   That alone takes the network from 27.6 to 2.1 ms in plain NumPy.
+3. **Not yet redone:** the one-step NN of [1] in compiled form. Its 2.2x is ALSO PyTorch
+   against PyTorch at batch 1, 20,000 calls against 80, so per-call overhead favours us.
+   Until it is compiled too, quote calls per simulated second (80 vs 1/dt), not ms.
+4. I endorsed 41x / 109x without checking the solver's implementation. F41 caught the batch-size
+   caveat; this one was missed until outside review.
+
+**UPDATE 2026-09-29 (later): every method compiled, and cost against the simulator step.**
+`export_head_to_head.py` (project venv) + `bench_head_to_head.py` / `bench_scaling.py` (Numba
+venv); every compiled kernel is checked against the project's own output first (solvers and
+the one-step NN exact, ours / MLP within 4e-5 rad = float32 vs float64).
+
+graphs/12's case (unlimited, fixed gains, inside [1]'s range), batch 1, ms per simulated second:
+
+| method | PyTorch (old graphs/12) | **compiled** | theta RMS (unchanged) |
+|---|---|---|---|
+| solver @100 us | 1109 | **1.32** | 8.71e-4 |
+| solver @50 us | 2191 | 2.44 | 6.18e-4 |
+| one-step NN [1] @50 us | 60 | **12.1** | 8.85e-4 |
+| one-step NN [1] @100 us | 30 | 6.3 | 8.24e-3 |
+| plain MLP (lean) | 23 | 8.9 | 1.45e-3 |
+| **ours, famR L3_w128 (lean)** | 27 | **1.32** | 8.83e-4 |
+
+Cost against the simulator step (lockstep, batch 1, compiled; ours = the flagship emitting
+theta at EVERY step, branch still on 125 samples per window, `compiled_scaling.json`):
+
+| dt | solver limited | solver unlimited | one-step NN [1] | **ours** |
+|---|---|---|---|---|
+| 100 us | 3.59 | 1.15 | 5.89 | **1.05** |
+| 50 us | 7.13 | 2.34 | 11.87 | 1.16 |
+| 25 us | 14.4 | 4.59 | 23.1 | 1.38 |
+| 10 us | 33.2 | 11.1 | 58.3 | 2.01 |
+| 5 us | 59.8 | 23.0 | 115.7 | 3.15 |
+| 2 us | 135.9 | 57.3 | 287.2 | **6.08** |
+
+**The claims that survive, all compiled against compiled:**
+- vs [1] at equal accuracy (its 50 us): **~9x cheaper** (12.1 vs 1.32), up from the 2.2x PyTorch
+  number. The structural reason: 20,000 calls per simulated second against 80.
+- vs the UNLIMITED solver at 100 us: **a tie** (1.32 vs 1.32) at 1.4% more error. No speedup
+  on the unlimited PLL at the training step. Say so.
+- vs the LIMITED solver (the paper's system) at 100 us: **~3.4x** (3.59 vs 1.05).
+- as the simulator step shrinks, the gap grows: at 10 us ~16x / 5.5x (limited / unlimited),
+  at 2 us **~22x / 9x**, and ~47x against [1]. That is the defensible speed contribution.
+- Fig. 2 of the paper (`paper_figures.py 2`) now shows exactly these two tables.
+
 ### F81 — **TUNABLE GAINS COST 1.5x AT THE OPERATING POINT, like-for-like, on the limited system; the flagship beats the fixed model anyway.** `src/analysis/gains_cost.py`. 2026-09-28.
 
 famN (FIXED 25/300, 4 seeds) vs famO (TUNABLE fed 25/300, 8 seeds), both L3_w128, n=5000,
@@ -1637,7 +1707,7 @@ not the "3.23x" in the draft, which has no source. The flagship (40k + anchor) i
 MORE accurate than the fixed-gain model at the fixed model's own tuning. Caveat: the fixed
 arm's seed spread is wide (3.2e-4 to 8.4e-4 on clean), 4 seeds.
 
-### F80 — **ON THE LIMITED SYSTEM THE FLAGSHIP IS 109x FASTER THAN ITS SOLVER, and it extrapolates like the old model, only 1.3-6x better.** `graphs/32`, `src/analysis/limited_speed.py`. 2026-09-28.
+### F80 — ~~**ON THE LIMITED SYSTEM THE FLAGSHIP IS 109x FASTER THAN ITS SOLVER,**~~ **SPEED PART SUPERSEDED BY F82** (the solver was an interpreted Python loop; compiled, it is ~3.4x). The extrapolation part stands. Original heading: and it extrapolates like the old model, only 1.3-6x better.** `graphs/32`, `src/analysis/limited_speed.py`. 2026-09-28.
 
 **Speed** (`limited_speed.py`, M1 Max CPU, 8 torch threads, batch 1, per trajectory, median
 of 5 after a warm-up, all in one process, nothing else running):
@@ -4228,6 +4298,32 @@ exp32  famO20k (n=20000) + anchor         SUBMITTED 2026-09-21, array 29453230 (
          Pre-registration scoring (final when all 8 land): "1.05-1.15x over famQ" WRONG --
          the doubling paid 1.22x, as much as the previous one; "worst case does not improve"
          WRONG so far -- it improved ~1.8x on both splits.
+exp34  hyperparameter re-sweep at the     SUBMITTED 2026-09-29: r34a = 29517245 (48), r34b = 29518950 (16).
+                                                 famO40k_W20/W50 generated; every CHECK True, max|diff|
+                                                 0.0 vs famO40k_W40 on all 40000 runs.
+                                                 PLANNED 2026-09-29 (external quiz Q14). The flagship's recipe
+       FINAL configuration, 64 GPU jobs          with one knob moved, 8 seeds per arm: w_phys 0/0.1/1,
+                                                 comb F8 mf1006 / F4 mf1006 / F4 mf251, W=20 / W=50.
+                                                 Baseline = exp33 arm B, not retrained. exp34a (48
+                                                 jobs, W40) + exp34b_windows (16 jobs, W20/W50),
+                                                 all queued at once after seven deletions (below);
+                                                 the header of hpc/exp34a_resweep.txt has the
+                                                 commands, the verdict rule and the predictions.
+                                                 Data: hpc/job_gen_exp34.sh (W20 + W50, one solve).
+                                                 NOT rewindow.py: it crashes on per-window kp/ki.
+                                                 Same-seed regeneration at W=20/50 checked bit-
+                                                 identical to W=40 on a 40-run miniature.
+                                                 Scoring: src/analysis/exp34_report.py -> graphs/33;
+                                                 baseline reproduces exp32's saved scores exactly,
+                                                 and a famO_W20 model re-sliced from famO_W40's runs
+                                                 reproduces its own record to 4e-6.
+                                                 Width 256 not included (costs speed; exp26 row).
+DATASETS DELETED 2026-09-29 for exp34 (to be run by the user): famO20k_W40 (--lhs_seed 27,
+       hpc/job_gen_famO20k.sh), famQ_W40 and famO_W40 (--lhs_seed 24 / 22, hpc/job_gen_limiter.sh
+       lines "gen famQ" / "gen famO"; the laptop also keeps copies of both).
+       MOVED, not deleted: famH/I/J/K_W20 (irreplaceable, no seed) now live ONLY on the laptop in
+       Summer_Internship_2026/PLL_data_backup/ (outside the repo), deleted on the cluster after
+       their sha256 matched. /dtu/blackhole was considered: only Infiniband nodes reach it.
 DATASETS DELETED 2026-09-21 (to be run by the user) to fit famO20k in the 30 GB home quota --
        /work3 does not exist for this account. Each has a recorded seed and its experiment
        is finished; regenerate with the listed job line (~3 min each). The current generator
@@ -4239,6 +4335,7 @@ DATASETS DELETED 2026-09-21 (to be run by the user) to fit famO20k in the 30 GB 
          famS_W40, famT_W40  --lhs_seed 25   hpc/job_gen_limiter.sh lines "gen famS/famT"
          famO70_W40          --lhs_seed 22 --jump_deg 70   hpc/job_gen_famO70.sh
        KEPT because no seed is recorded anywhere (irreplaceable): famB, famH-K, famU, famV.
+       (2026-09-29: the famH-K_W20 files moved to the laptop backup -- see the exp34 entry.)
 exp29/30 SUBMITTED 2026-09-18 15:53: data29 = 29444238 (8), anchor30 = 29444235 (12).
        All three arrays wait for the service window; start Mon 21 Sep 09:00.
 exp28  split trunk x gains-on-trunk       DONE   F72, graphs/28. A+B seed 7 is LOST: at 44 h

@@ -1,0 +1,148 @@
+# exp34 -- the hyperparameter re-sweep at the FINAL configuration. 8 arms x 8 seeds = 64 GPU jobs,
+# in two files because the window arms need new data first:
+#
+#     exp34a_resweep.txt    w_phys x3, Fourier comb x3   48 jobs  famO40k_W40 (exists)   THIS FILE
+#     exp34b_windows.txt    W=20 and W=50                16 jobs  famO40k_W20/W50 (generate)
+#
+# WHY. Every hyperparameter in the paper's Section III-C was chosen on EASIER problems than the
+# one the flagship solves: w_phys on famB (n=5000, no limiter, fixed gains, F54), the comb on
+# famB (F56), the window on famB/famI (F45, F58). The final problem has the +/-3 Hz limiter,
+# tunable gains, 8x the data and the anchor trained in. A reviewer (and the external quiz,
+# Q14) can fairly ask whether those choices still hold. This measures it, once, on the
+# final configuration, with the same 8 seeds and both common tests as graphs/30.
+#
+# DESIGN. Each arm = the flagship's recipe with ONE knob moved. Everything else identical to
+# exp33 arm B (limiter, gains, famO40k, anchor trained in, L3_w128, epochs 1200, patience 40,
+# split_seed 0, n_eval 150). The BASELINE is exp33 arm B itself -- the flagship (s6) and its
+# 7 siblings, sweeps_exp33/*_ao_g.json. It is NOT retrained: identical config, and retraining
+# would overwrite runs/ checkpoints that graphs 03-05, 30-32 and the paper figures point at.
+#
+#     knob      arms                          baseline      what it tests
+#     w_phys    0, 0.1, 1.0                   0.3           F54's optimum, now with the anchor
+#     comb      F8 mf1006  (lowest 126)       F4 mf503      F56: only the lowest feature matters
+#               F4 mf1006  (lowest 251)       (lowest 126)
+#               F4 mf251   (lowest 63)
+#     window    W=20 (25 ms), W=50 (10 ms)    W=40          F45/F58's flat bottom, now anchored
+#
+# NOT re-swept here, and why: depth/width (fixed by the inference budget -- width 256 was
+# declined because it costs speed; capacity grids exp17/exp28), the latent basis p=64,
+# lr/batch/patience (optimiser settings, fixed since Stage A), data size and anchor
+# treatment (exp33 measured both at 40k), the gain box and the limiter (they define the
+# problem, they are not hyperparameters).
+#
+# DISK. famO40k_W20 + famO40k_W50 are ~9.7 GiB together; 3.55 GiB was free on 2026-09-29.
+# Seven deletions make ~13.9 GiB free (~4 GiB margin):
+#   regenerable, seeded: famO20k_W40 (seed 27, hpc/job_gen_famO20k.sh), famQ_W40 and famO_W40
+#     (seeds 24/22, hpc/job_gen_limiter.sh); the common tests use the laptop's own copies.
+#   IRREPLACEABLE (no seed recorded): famH/I/J/K_W20, exp13/14's finished W=20 families. They
+#     move to the laptop, OUTSIDE the repo (.gitignore does not cover them), and are deleted
+#     here only after the checksums match. famB, famH-K_W40, famU, famV stay.
+# /dtu/blackhole is not an option: its readme says only Infiniband nodes can reach it.
+#
+# COMMANDS. On the LAPTOP, the backup and its check (want four "OK" lines):
+#     mkdir -p ~/Desktop/DTU/Summer_Internship_2026/PLL_data_backup
+#     rsync -avP 'andod@login2.hpc.dtu.dk:PLL_Attempt/data/fam[HIJK]_W20.npz' ~/Desktop/DTU/Summer_Internship_2026/PLL_data_backup/
+#     cd ~/Desktop/DTU/Summer_Internship_2026/PLL_data_backup && ssh andod@login2.hpc.dtu.dk 'cd PLL_Attempt/data && sha256sum fam[HIJK]_W20.npz' | shasum -a 256 -c
+# Then on the CLUSTER, from ~/PLL_Attempt (NOT ~ -- rm -f is silent about missing files):
+#     rm -fv data/famO20k_W40.npz data/famQ_W40.npz data/famO_W40.npz data/famH_W20.npz data/famI_W20.npz data/famJ_W20.npz data/famK_W20.npz
+#     sh hpc/submit.sh hpc/exp34a_resweep.txt r34a hpc/job_sweep_gpu_long.sh
+#     bsub < hpc/job_gen_exp34.sh                   (refuses while any of the seven exists)
+#     grep CHECK logs/gen_<jobid>.out               (every line True / diff 0, ~30 min later)
+#     sh hpc/submit.sh hpc/exp34b_windows.txt r34b hpc/job_sweep_gpu_long.sh
+#
+# COST. exp33 arm B on an L40S: 576-711 epochs at ~42 s = 6.7-8.2 h per job, so ~500 GPU-h
+# in all. job_sweep_gpu_long.sh's 16 h wall is 2x that. W=50 runs ~1.2x slower per epoch
+# (F45) and W=20 needed ~1.3x more epochs at n=5000 (F58); both still fit.
+#
+# HOW TO READ IT. src/analysis/exp34_report.py -> graphs/33_exp34_resweep.png. Each model on
+# famO's and famQ's 150 val runs, in its own window length. Median over 8 seeds, ratio =
+# baseline median / arm median (>1 = the arm is better), two-sided Mann-Whitney 8 vs 8.
+# FIRST check epochs_run against the 1200 cap -- the report flags CAPPED -- a capped arm's
+# number is an upper bound, not a result (F45/F58: this has bitten four times).
+#
+# VERDICT RULE, fixed before looking.
+#   BETTER / WORSE only if the ratio points the same way on BOTH common tests with
+#     p < 0.05/8 = 0.0063 on both (Bonferroni over the 8 arms). A ratio within 1.05x is a
+#     tie whatever p says. Anything else is a tie.
+#   The recipe changes only if an arm is BETTER by >= 1.10x on both tests. The new flagship
+#     is then picked among that arm's seeds by their OWN validation record, never the common
+#     tests, and every dependent figure is redrawn. A BETTER arm under 1.10x is reported in
+#     the paper, but the flagship stays.
+#   If two arms are BETTER, their combination is untested: one follow-up arm, not an assumption.
+#   A W=20 arm that TIES is still news: half the network calls per simulated second. It would
+#     get a compiled speed measurement (kernels.py, 755 inputs, m=250) before any claim.
+#
+# PRE-REGISTERED, before looking.
+#   w_phys 0     WORSE, 1.2-1.6x. F54 measured 1.88x at famB n=5000; 8x the data should shrink
+#                what the physics term's free derivative labels are worth. If it TIES, the
+#                physics loss no longer earns its keep at 40k -- and III-C must say so.
+#   w_phys 0.1   TIE (F54: 0.1 and 0.3 tied at n=5000).
+#   w_phys 1.0   WORSE, but by LESS than F54's 1.6x -- predict 1.1-1.4x. F54 traced the
+#                high-w_phys penalty to the handover: the physics loss is blind to absolute
+#                theta/omega (its gauge null space). The anchor pins omega's absolute value at
+#                every handover, so it should remove part of that penalty. As bad as 1.6x ->
+#                the anchor does not act on F54's mechanism.
+#   F8 mf1006    TIE. Same lowest feature (126) and spacing as the baseline, and F56's three
+#                such combs tied. The rival: the limiter's clamp corners need frequencies
+#                famB's unlimited signal never did -- then F8 WINS. Either way it is a result.
+#   F4 mf1006    WORSE, >= 1.1x (lowest feature 251 sits above the signal's band, F56).
+#   F4 mf251     WORSE, >= 1.1x (lowest feature 63 = 0.125 cycles per 12.5 ms window, near-
+#                degenerate with raw t; F56's 31.5 rad/s comb was the worst ever measured).
+#   W=20         WORSE, 1.3-2x (F58 1.88x uncapped at n=5000; F67 1.85x under the limiter).
+#                The anchor made each handover cheaper, so halving their number buys less.
+#   W=50         TIE within 10% (F45: flat bottom from W=40 to W=100).
+
+# --- w_phys 0 ---
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 0 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 1 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 2 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 3 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 4 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 5 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 6 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 7 --anchor_omega
+# --- w_phys 0.1 ---
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0.1 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 0 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0.1 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 1 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0.1 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 2 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0.1 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 3 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0.1 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 4 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0.1 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 5 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0.1 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 6 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 0.1 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 7 --anchor_omega
+# --- w_phys 1.0 ---
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 1.0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 0 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 1.0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 1 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 1.0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 2 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 1.0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 3 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 1.0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 4 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 1.0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 5 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 1.0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 6 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 503 --w_phys 1.0 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 7 --anchor_omega
+# --- comb F8 to 1006 (lowest 126, same as the baseline's) ---
+--dataset famO40k_W40.npz --F 8 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 0 --anchor_omega
+--dataset famO40k_W40.npz --F 8 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 1 --anchor_omega
+--dataset famO40k_W40.npz --F 8 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 2 --anchor_omega
+--dataset famO40k_W40.npz --F 8 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 3 --anchor_omega
+--dataset famO40k_W40.npz --F 8 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 4 --anchor_omega
+--dataset famO40k_W40.npz --F 8 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 5 --anchor_omega
+--dataset famO40k_W40.npz --F 8 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 6 --anchor_omega
+--dataset famO40k_W40.npz --F 8 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 7 --anchor_omega
+# --- comb F4 to 1006 (lowest 251) ---
+--dataset famO40k_W40.npz --F 4 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 0 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 1 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 2 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 3 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 4 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 5 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 6 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 1006 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 7 --anchor_omega
+# --- comb F4 to 251 (lowest 63) ---
+--dataset famO40k_W40.npz --F 4 --max_freq 251 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 0 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 251 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 1 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 251 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 2 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 251 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 3 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 251 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 4 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 251 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 5 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 251 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 6 --anchor_omega
+--dataset famO40k_W40.npz --F 4 --max_freq 251 --w_phys 0.3 --split_seed 0 --epochs 1200 --patience 40 --n_eval_runs 150 --n_layers 3 --width 128 --results_dir sweeps_exp34 --seed 7 --anchor_omega

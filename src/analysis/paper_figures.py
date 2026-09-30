@@ -70,27 +70,54 @@ def style(ax):
 
 
 def fig2():
-    # (label, compute ms per simulated second, theta RMS rad, colour, marker, filled, label offset pts, ha)
-    pts = [("Trapezoidal solver, 100 µs",  1109, 8.71e-4, INK2,   "s", True,  (0, 7),   "center"),
-           ("Trapezoidal solver, 50 µs",   2191, 6.18e-4, INK2,   "s", False, (-7, 0),  "right"),
-           ("One-step NN [1], 50 µs",        60, 8.85e-4, ORANGE, "o", True,  (0, 7),   "center"),
-           ("One-step NN [1], 100 µs",       30, 8.24e-3, ORANGE, "o", False, (6, -1),  "left"),
-           ("Plain MLP",                     23, 1.45e-3, AQUA,   "^", True,  (-6, 0),  "right"),
-           ("Ours",                          27, 8.83e-4, BLUE,   "D", True,  (-7, -8), "right")]
-    fig, ax = plt.subplots(figsize=(COL_W, 2.3))
-    ax.axhline(8.71e-4, color=INK2, lw=0.6, ls=(0, (2, 2)), zorder=1)
-    ax.annotate("100 µs noise floor", (5500, 8.71e-4), xytext=(0, -7), textcoords="offset points",
-                ha="right", va="center", fontsize=6.5, color=INK2)
+    """(a) graphs/12's accuracy (unchanged: a compiled re-implementation computes the same
+    outputs) against COMPILED compute, and (b) compiled cost against the simulator step.
+    Both from src/analysis/compiled_speed/ (F82); the old PyTorch-loop solver timings are gone."""
+    import json
+    cs = ROOT / "src" / "analysis" / "compiled_speed"
+    h = json.load(open(cs / "compiled_head_to_head.json"))
+    sc = json.load(open(cs / "compiled_scaling.json"))
+    ms = lambda k: h[k]["ms_per_sim_s"]
+    # (label, compute, theta RMS vs the 12.5 us reference (graphs/12), colour, marker, filled, offset, ha)
+    pts = [("Solver, 100 µs",  ms("solver_100"), 8.71e-4, INK2,   "s", False, (7, 5),   "left"),
+           ("Solver, 50 µs",   ms("solver_50"),  6.18e-4, INK2,   "s", False, (6, 0),   "left"),
+           ("One-step NN [1], 50 µs",  ms("theirs_50"),  8.85e-4, ORANGE, "o", True,  (0, 7), "center"),
+           ("One-step NN [1], 100 µs", ms("theirs_100"), 8.24e-3, ORANGE, "o", False, (6, -1), "left"),
+           ("Plain MLP", ms("mlp"), 1.45e-3, AQUA, "^", True, (6, 0), "left"),
+           ("Ours", ms("ours"), 8.83e-4, BLUE, "D", True, (-6, -7), "right")]
+    fig, (a, b) = plt.subplots(2, 1, figsize=(COL_W, 4.2), gridspec_kw={"hspace": 0.42})
+    a.axhline(8.71e-4, color=INK2, lw=0.6, ls=(0, (2, 2)), zorder=1)
+    a.annotate("100 µs noise floor", (40, 8.71e-4), xytext=(0, -7), textcoords="offset points",
+               ha="right", va="center", fontsize=6.5, color=INK2)
     for lab, x, y, c, m, filled, off, ha in pts:
-        ax.scatter([x], [y], s=26, marker=m, color=c if filled else "white", edgecolor=c,
-                   linewidth=1.1, zorder=3)
-        ax.annotate(lab, (x, y), xytext=off, textcoords="offset points", ha=ha, va="center",
-                    fontsize=6.5, color=INK)
-    ax.set_xscale("log"); ax.set_yscale("log")
-    ax.set_xlim(8, 6000); ax.set_ylim(4.5e-4, 1.5e-2)
-    ax.set_xlabel("Compute [ms per simulated second], batch size 1")
-    ax.set_ylabel(r"$\theta$ RMS error [rad]")
-    style(ax)
+        a.scatter([x], [y], s=34 if lab.startswith("Solver") else 24, marker=m,
+                  color=c if filled else "white", edgecolor=c, linewidth=1.1, zorder=3)
+        a.annotate(lab, (x, y), xytext=off, textcoords="offset points", ha=ha, va="center",
+                   fontsize=6.5, color=INK)
+    a.set_xscale("log"); a.set_yscale("log")
+    a.set_xlim(0.6, 40); a.set_ylim(4.5e-4, 1.5e-2)
+    a.set_xlabel("Compiled compute [ms per simulated second], batch size 1")
+    a.set_ylabel(r"$\theta$ RMS error [rad]")
+    a.set_title("(a) Unlimited PLL, fixed gains, at the methods' own steps", loc="left", pad=3)
+    style(a)
+
+    dts = sorted((float(k) for k in sc), reverse=True)
+    for key, lab, c, ls, mk in [("solver_limited", "Solver, limited", INK2, "-", "s"),
+                                ("solver_unlimited", "Solver, unlimited", INK2, (0, (3, 1.5)), "s"),
+                                ("one_step_nn", "One-step NN [1]", ORANGE, "-", "o"),
+                                ("ours", "Ours (limited, output every step)", BLUE, "-", "D")]:
+        y = [sc[f"{d:g}"][key] for d in dts]
+        b.plot(dts, y, color=c, ls=ls, lw=1.1, marker=mk, ms=3.2,
+               mfc="white" if key == "solver_unlimited" else c, mec=c)
+        b.annotate(lab, (dts[-1], y[-1]), xytext=(4, 0), textcoords="offset points", va="center",
+                   fontsize=6.5, color=INK)
+    b.set_xscale("log"); b.set_yscale("log")
+    b.set_xlim(110, 0.35)                                      # step shrinks to the right
+    b.set_xticks([100, 50, 25, 10, 5, 2]); b.set_xticklabels(["100", "50", "25", "10", "5", "2"])
+    b.set_xlabel("Simulator step [µs]")
+    b.set_ylabel("Compute [ms per sim. s]")
+    b.set_title("(b) Cost when solved in lockstep with the simulator", loc="left", pad=3)
+    style(b)
     save(fig, "fig2_accuracy_vs_compute")
 
 

@@ -1,0 +1,26 @@
+{
+ "solver_100": {
+  "ms_per_sim_s": 1.32416607812047,
+  "max_abs_diff_vs_original": 0.0
+ },
+ "solver_50": {
+  "ms_per_sim_s": 2.4375831708312035,
+  "max_abs_diff_vs_original": 0.0
+ },
+ "theirs_50": {
+  "ms_per_sim_s": 12.068209005519748,
+  "max_abs_diff_vs_original": 2.842170943040401e-14
+ },
+ "theirs_100": {
+  "ms_per_sim_s": 6.252791965380311,
+  "max_abs_diff_vs_original": 2.842170943040401e-14
+ },
+ "ours": {
+  "ms_per_sim_s": 1.3157501816749573,
+  "max_abs_diff_vs_original": 3.1045618158032084e-05
+ },
+ "mlp": {
+  "ms_per_sim_s": 8.907999843358994,
+  "max_abs_diff_vs_original": 3.7561777048722433e-05
+ }
+}
